@@ -88,10 +88,65 @@ disk      40 GB gp3          $     4
 **Storage dominates, and it is not close.** Compute is 10% of the bill at any realistic
 scale. Every instinct to optimise the transcode is misdirected effort.
 
+## 4b. The fairer comparison: marginal cost
+
+The table above charges Obscura for storing the original files. That overstates it. If you
+already keep source video in S3 — and most adopters do, because they need it for
+processing, re-encoding, or simply as the record — that cost is **sunk and identical in
+every option**. It is not part of the decision.
+
+Baseline you pay regardless, 720p sources, 12-month retention:
+
+| Scenario | Originals in S3 | Cost |
+|---|---|---|
+| A 500/mo | 1.3 TB | $32/mo |
+| B 5,000/mo | 12.6 TB | $322/mo |
+| C 50,000/mo | 125.7 TB | $3,219/mo |
+
+**Marginal cost of adding secure streaming on top of that:**
+
+| Scenario | Obscura (S3) | **Obscura (R2)** | Bunny | Cloudflare Stream | Mux |
+|---|---|---|---|---|---|
+| A 500/mo | $240 | **$185** | $28 | $384 | $861 |
+| B 5,000/mo | $1,111 | **$559** | $281 | $3,837 | $8,607 |
+| C 50,000/mo | $10,823 | **$5,303** | $2,810 | $38,373 | $86,073 |
+
+This changes the picture materially:
+
+- **vs Mux: 7.7× cheaper** (was 5.9× on total cost)
+- **vs Cloudflare Stream: 3.5× cheaper** (was 2.6×)
+- **vs Bunny: 2× more expensive on R2** — down from 6×
+
+### The cost that appears on nobody's pricing page
+
+A hosted platform cannot read your bucket. You upload a **copy** of every new recording,
+and pulling it out of S3 is egress you pay every month, forever:
+
+| Scenario | Monthly S3 egress just to hand over a copy |
+|---|---|
+| A | $12 |
+| B | $117 |
+| C | $1,173 |
+
+That is included in the hosted columns above. It never appears in a vendor comparison
+because it is charged by AWS, not by them.
+
+### The other thing a copy means
+
+| Scenario | Candidate video duplicated into a third party's infrastructure |
+|---|---|
+| A | 2.7 TB |
+| B | 27.1 TB |
+| C | 271 TB |
+
+For personal data under erasure obligations, that is not a cost line. It is a second place
+you must be able to evidence deletion from, using whatever API they give you and whatever
+assurances they are willing to put in writing.
+
 ## 5. The honest part: Obscura is not the cheapest option
 
-**Bunny Stream undercuts self-hosting at every scale** — roughly 6× cheaper than Obscura on
-AWS. It bills per GB rather than per minute, includes transcoding free, and its CDN egress
+**Bunny Stream undercuts self-hosting at every scale** — roughly 6× cheaper on total cost,
+or **2× cheaper on the marginal basis in §4b**, which is the fairer read. It bills per GB rather than per minute, includes transcoding free, and its CDN egress
 is $0.01/GB against S3's $0.109/GB. If cost were the only consideration, you would use
 Bunny and not read the rest of this document.
 
