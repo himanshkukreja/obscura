@@ -57,3 +57,7 @@ Thumbs.db
 # Cloud-provider IAM policies, bucket setup and deploy-user scripts live outside version
 # control. They contain no secrets, but they describe a specific deployment's shape.
 examples/aws/
+
+# Working notes for a specific deployment - session records, migration plans, numbers
+# measured against one install. Useful to whoever runs that install, noise in the repo.
+docs/local_notes/
