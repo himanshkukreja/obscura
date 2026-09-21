@@ -66,21 +66,34 @@
   }
 
   var base = location.origin;
-  var manifest = base + '/stream/' + encodeURIComponent(sid) + '/master.m3u8?t=' + encodeURIComponent(tok);
 
   // Keep the session alive. The heartbeat endpoint needs no API key - it is authorized by
   // the session id itself - which is what lets this page be shared without leaking a key.
   function beat() {
-    fetch(base + '/api/v1/playback/' + encodeURIComponent(sid) + '/heartbeat', { method: 'POST' })
+    return fetch(base + '/api/v1/playback/' + encodeURIComponent(sid) + '/heartbeat', { method: 'POST' })
       .then(function (r) {
-        if (r.status === 401) { fail('This session was revoked or expired.'); video.pause(); return null; }
+        if (r.status === 401) { return r.json().then(function (e) { throw e; }); }
         return r.ok ? r.json() : null;
       })
-      .then(function (d) { if (d && d.refresh_after) setTimeout(beat, d.refresh_after * 1000); })
-      .catch(function () { setTimeout(beat, 30000); });
+      .then(function (d) { if (d && d.refresh_after) setTimeout(beat, d.refresh_after * 1000); return d; });
   }
-  setTimeout(beat, 5000);
 
+  // Mint a FRESH token before touching the manifest, rather than trusting the one in the
+  // link. A playback token lives ~3 minutes but the session lives hours, so a link opened
+  // even slightly later would 401 on its first request - which makes it useless as
+  // something you send to somebody. The heartbeat is unauthenticated by design, so the
+  // page can do this itself.
+  beat()
+    .then(function (d) { start((d && d.token) || tok); })
+    .catch(function (e) {
+      var code = e && e.error && e.error.code;
+      if (code === 'session_revoked') fail('This link has been revoked.');
+      else if (code === 'session_expired') fail('This link has expired. Ask for a new one.');
+      else start(tok);   // network hiccup: fall back to the token in the URL
+    });
+
+  function start(token) {
+  var manifest = base + '/stream/' + encodeURIComponent(sid) + '/master.m3u8?t=' + encodeURIComponent(token);
   if (video.canPlayType('application/vnd.apple.mpegurl')) {
     // Safari / iOS play HLS natively; hls.js is neither needed nor usable there.
     video.src = manifest;
@@ -113,6 +126,7 @@
     });
   } else {
     fail('This browser cannot play HLS.');
+  }
   }
 })();
 </script>
