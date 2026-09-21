@@ -23,6 +23,10 @@ It is a **primitive you embed**, not a video platform. Your application decides 
 watch what*. Obscura decides *how those bytes reach the browser safely* — and how they
 stop existing when you say so.
 
+No hosted platform can offer the last part. They hold the keys, so "we deleted it" is a
+claim about their internal processes. Obscura destroys the key, which makes every copy you
+could never reach permanently unreadable, and signs a record saying so.
+
 ## Why does it exist?
 
 Obscura was built for a case that turns out to be common: **video that is somebody's

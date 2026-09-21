@@ -70,6 +70,10 @@ it; a sustained transcode drains the balance and then throttles the entire insta
 
 12-minute interviews, 2 full-length views each, 12-month retention, 720p sources.
 
+Read this table with a caveat: it puts Obscura on AWS and each hosted platform on its own
+infrastructure, so it measures **storage vendors as much as products**. §4b and §4c correct
+for that.
+
 | Scenario | Ingest/mo | Library | **Obscura (S3)** | Cloudflare Stream | Mux | Bunny Stream |
 |---|---|---|---|---|---|---|
 | **A** 500 interviews/mo | 6,000 min | 4.0 TB | **$276** | $372 | $849 | $23 |
@@ -143,30 +147,88 @@ For personal data under erasure obligations, that is not a cost line. It is a se
 you must be able to evidence deletion from, using whatever API they give you and whatever
 assurances they are willing to put in writing.
 
-## 5. The honest part: Obscura is not the cheapest option
+## 4c. Like for like: same infrastructure, both products
 
-**Bunny Stream undercuts self-hosting at every scale** — roughly 6× cheaper on total cost,
-or **2× cheaper on the marginal basis in §4b**, which is the fairer read. It bills per GB rather than per minute, includes transcoding free, and its CDN egress
-is $0.01/GB against S3's $0.109/GB. If cost were the only consideration, you would use
-Bunny and not read the rest of this document.
+Obscura's storage layer is the S3 API, and Bunny Storage exposes an S3-compatible API. Put
+both products on the same vendor and the storage-price difference disappears, leaving only
+the products:
 
-What you give up with any hosted platform:
+| Scenario | **Obscura on Bunny Storage** | **Bunny Stream** | Difference |
+|---|---|---|---|
+| A 500/mo | $159 | $28 | +$131 |
+| B 5,000/mo | $307 | $281 | **+$26** |
+| C 50,000/mo | $2,782 | $2,810 | **−$29** |
 
-| | Obscura | Hosted platform |
-|---|---|---|
-| Where the media lives | Your bucket, your account | Their infrastructure |
-| Verified deletion with a signed record | Yes | Deletion API, no proof |
-| Cryptographic erasure on delete | Yes — key destroyed | Not offered |
-| Signed integrity manifests | Yes | No |
-| Sub-processor paperwork | None | One more processor in your DPA |
-| Session revocation semantics | You define them | Theirs |
-| Cost trajectory | Storage prices, which fall | Their pricing, which they set |
+At 5,000 interviews a month the difference is $26. At 50,000 **Obscura is cheaper**, because
+a hosted platform makes you pay cloud egress to hand it a copy of every recording, every
+month, and that grows with volume until it exceeds Obscura's fixed compute.
 
-For interview recordings — personal data, statutory erasure rights, an auditor who may
-ask — those rows are the reason to self-host. **Obscura is not the cheapest way to stream
-video. It is the cheapest way to stream video you remain accountable for.**
+Below roughly 2,000 interviews a month Bunny Stream is genuinely cheaper, and the reason is
+mundane: $143 of compute is large relative to a small library. That advantage is real and it
+disappears as you grow.
 
-If your content is marketing clips, Bunny is the right answer and this project is overkill.
+**So cost is not the deciding factor at any scale you are likely to care about.** It is a
+wash at moderate volume and favours Obscura at high volume. The decision is about
+capability.
+
+## 5. What you are actually choosing between
+
+Obscura is not a streaming platform competing on streaming. It is a **delivery and custody
+layer** for video you are accountable for, and the comparison only makes sense in those
+terms.
+
+### What Obscura provides that no hosted platform does
+
+| | Obscura | Mux | Cloudflare | Bunny |
+|---|---|---|---|---|
+| Media never leaves your account | **Yes** | No | No | No |
+| Signed integrity manifest (Ed25519 over a Merkle root) | **Yes** | No | No | No |
+| Per-segment inclusion proofs, ~400 bytes | **Yes** | No | No | No |
+| Publicly verifiable signing keys | **Yes** | No | No | No |
+| Verified deletion — storage enumerated, re-checked empty | **Yes** | No | No | No |
+| Signed deletion record that outlives the asset | **Yes** | No | No | No |
+| **Cryptographic erasure — the key destroyed** | **Yes** | No | No | No |
+| Immediate revocation, not token expiry | **Yes** | No | No | No |
+| Concurrent-session limits built in | **Yes** | No | No | No |
+| Retention enforcement built in | **Yes** | No | No | No |
+| Salted-hash IP / user agent, configurable | **Yes** | No | No | No |
+| Zero additional sub-processors | **Yes** | No | No | No |
+| Auditable implementation, Apache-2.0 | **Yes** | No | No | No |
+| Storage portability — S3, R2, MinIO, B2 | **Yes** | No | No | No |
+
+The key-destruction row is the one that cannot be closed by a competitor's roadmap. **They
+hold the keys**, because they operate the encryption. Any copy surviving in a replica,
+snapshot or edge cache remains readable by them, and "we deleted it" is a claim about
+internal process that you can neither verify nor pass on to an auditor. When Obscura
+destroys a content key, every unreachable copy becomes permanently inert, and there is a
+signed record saying so.
+
+For video that is personal data — candidate recordings, medical consultations, legal
+proceedings, internal investigations — that list is not a set of nice-to-haves. It is the
+difference between being able to answer a regulator and not.
+
+### What the hosted platforms provide that Obscura does not
+
+Stated plainly, because pretending otherwise would undermine everything above:
+
+- **Global CDN.** All three. Obscura serves from object storage; `cdn_signed` is a port with
+  nothing behind it. Fine at a handful of viewers per asset, a real constraint above that.
+- **Studio DRM.** Mux and Bunny Enterprise. Obscura will not have it in the core, by design.
+- **Automatic captions.** Cloudflare (12 languages) and Mux. Obscura imports a transcript
+  you already have.
+- **Per-title encoding and modern codecs.** Mux does content-aware encoding and AV1/HEVC,
+  and genuinely beats a fixed H.264 ladder on bytes per unit of quality.
+- **Thumbnails, sprite sheets, clipping, live, playback analytics, mobile SDKs.** Various.
+- **Somebody else's on-call rotation.** All of them. This is the real product.
+
+### The scope question
+
+If you are streaming marketing videos, course content, or anything where nobody will ever
+ask where the file lives, a hosted platform is a better product and you should use one.
+Obscura is not trying to win that comparison.
+
+If the video is personal data with erasure obligations attached, Obscura is the only option
+on this page that lets you answer the questions that follow — at roughly the same cost.
 
 ## 6. The levers that actually matter
 
@@ -276,14 +338,14 @@ $276–$1,436/month on S3, $197–$756 on R2. Compute is noise; do not optimise 
 bill 60% and is a better data-protection position. Retrofitting retention onto an existing
 library means a lot of deletion jobs at once.
 
-**Revisit if any of these become true** — they are the conditions under which a hosted
-platform wins:
+**Consider a hosted platform instead if any of these become true:**
 
 - One asset regularly draws thousands of concurrent viewers (you need a real CDN)
 - You need live streaming (explicitly out of scope)
 - You need studio DRM (Widevine/FairPlay, not in the core by design)
 - Nobody has time to operate it — a hosted platform's real product is somebody else's
   on-call rotation, and that is worth paying for
+- Nobody has ever asked where the recordings live, and nobody plausibly will
 
 ---
 

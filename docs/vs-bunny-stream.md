@@ -3,9 +3,15 @@
 Bunny Stream is the strongest cost competitor, so it deserves a direct comparison rather
 than a row in a table. Checked against vendor documentation in September 2026.
 
-**Short version:** compared like for like — both running on Bunny's infrastructure —
-they cost roughly the same. The "Bunny is 6× cheaper" figure compares Obscura on AWS
-against Bunny on Bunny, which is a comparison of storage vendors, not of products.
+**Short version:** they are not the same kind of product. Bunny Stream is a finished
+streaming platform. Obscura is a delivery and custody layer for video you are accountable
+for, and it does a dozen things Bunny structurally cannot — starting with keeping the media
+in your own account and being able to prove it was destroyed.
+
+On cost, compared like for like — both on Bunny's infrastructure — they are within $26 a
+month at 5,000 videos, and Obscura is cheaper at 50,000. The widely quoted "6× cheaper"
+compares Obscura on AWS with Bunny on Bunny, which measures storage vendors rather than
+products.
 
 ---
 
@@ -36,7 +42,7 @@ fed.
 
 ## 2. Feature by feature
 
-### Streaming — Bunny wins
+### Streaming — Bunny is the better streaming product
 
 | | Obscura | Bunny Stream |
 |---|---|---|
@@ -50,7 +56,9 @@ fed.
 | Resumable uploads (TUS) | Multipart only | Yes |
 | Codecs | H.264 | H.264 |
 
-Not close. Bunny is a finished product; Obscura is a delivery primitive.
+Bunny is a finished streaming platform and Obscura is not trying to be one. If your
+requirement is "put video on the internet quickly and cheaply," this table is the whole
+decision and Bunny wins it.
 
 ### Protection — mixed, and more even than it looks
 
@@ -72,7 +80,7 @@ real Widevine and FairPlay, which Obscura will never have.
 Obscura is ahead on exactly two things here: revocation that takes effect immediately
 rather than at token expiry, and concurrent-session limits as a first-class feature.
 
-### Accountability — Bunny cannot compete, structurally
+### Accountability — where Obscura is in a different category
 
 | | Obscura | Bunny Stream |
 |---|---|---|
@@ -157,18 +165,23 @@ integration suite, and specifically watch the deletion test that plants an orpha
 
 ## 5. Choosing
 
-**Bunny Stream** if you want a finished product and custody is not a requirement. Global
-CDN, DRM tier, analytics, live, captions, somebody else's on-call. Much cheaper below a few
-thousand videos a month. For most video on the internet this is the right answer.
+These products answer different questions, so the choice is usually obvious once the
+question is stated.
 
-**Obscura** if the media is personal data you are accountable for. You give up the CDN, DRM,
-analytics, live and captions. You get: media that never leaves your account, signed
-integrity manifests, verified deletion, and key destruction that makes unreachable copies
-inert. At meaningful volume it costs the same.
+**Obscura** when the video is personal data you are accountable for — candidate recordings,
+consultations, proceedings, investigations. It is the only option here where the media never
+leaves your account, where every artifact is hashed into a signed manifest, where deletion is
+verified rather than asserted, and where destroying a key makes copies you could never reach
+permanently unreadable. At meaningful volume it costs the same as Bunny Stream, and above
+~50,000 videos a month it costs less.
 
-**Obscura on Bunny Storage + Bunny CDN**, if the compatibility holds, is the interesting
-answer: Bunny's economics and reach with Obscura's accountability. Worth an afternoon of
-testing before betting on it.
+**Bunny Stream** when the requirement is streaming and custody is not part of it. Global CDN,
+DRM tier, analytics, live, captions, thumbnails, and somebody else's on-call rotation. Below
+a couple of thousand videos a month it is also substantially cheaper.
+
+**Obscura on Bunny Storage + Bunny CDN** is the combination worth testing: Bunny's storage
+economics and global reach with Obscura's custody and attestation. Two pieces of work stand
+between it and production (§4), and the compatibility check is an afternoon.
 
 Numbers behind this: [scaling-and-cost.md](scaling-and-cost.md).
 Wider comparison: [feature-comparison.md](feature-comparison.md).

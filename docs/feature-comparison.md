@@ -4,8 +4,11 @@ Obscura against the hosted platforms it is most often weighed against. Vendor ca
 were checked against their own documentation in September 2026 — **re-verify before
 deciding**, these move quickly.
 
-The honest summary: **Obscura is narrower than all of them, and better at three specific
-things none of them do at all.**
+**Obscura is a narrower product with a different purpose.** It does not compete on
+streaming features and does not try to. What it provides — and no platform on this page
+does — is custody, cryptographic attestation of what was produced, and provable destruction.
+Where those matter, nothing else here is a substitute at any price. Where they do not, the
+hosted platforms are better products.
 
 ---
 
@@ -167,7 +170,7 @@ know where viewers drop off.
 
 ## Scorecard
 
-**Obscura is the only option that offers:**
+**Only Obscura offers:**
 
 1. Signed integrity manifests with per-segment proofs
 2. Verified deletion with a signed record that outlives the asset
