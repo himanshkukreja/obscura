@@ -87,11 +87,13 @@ export async function runRendition(
     // serves without possessing any content key.
     const bucket = asset.delivery_bucket!;
     const segmentHashes: string[] = [];
+    const segmentSizes: number[] = [];
     let bytesTotal = 0;
 
     for (const [i, segPath] of result.segmentPaths.entries()) {
       const cipher = encryptSegment(await readFile(segPath), contentKey, keyRow.iv);
       segmentHashes.push(sha256(cipher));
+      segmentSizes.push(cipher.length);
       bytesTotal += cipher.length;
       const ext = segPath.endsWith('.ts') ? 'ts' : 'm4s';
       await ctx.storage.put(
@@ -129,6 +131,19 @@ export async function runRendition(
       cacheControl: 'private, max-age=0',
     });
     const playlistSha = sha256(playlistBuf);
+
+    // Persist the hashes we just computed. Without this, finalize has to re-download every
+    // segment to recompute them - O(bytes) network per asset for data we already had.
+    const sidecar = Buffer.from(JSON.stringify({
+      rendition: name,
+      container: ctx.cfg.packaging.container,
+      segments: segmentHashes.map((sha256, i) => ({ index: i, sha256, size: segmentSizes[i] })),
+      initSha256: initSha,
+      playlistSha256: playlistSha,
+    }), 'utf8');
+    await ctx.storage.put(bucket, StorageKeys.segmentHashes(assetId, name), sidecar, {
+      contentType: 'application/json', contentLength: sidecar.length,
+    });
 
     await ctx.repos.renditions.complete(assetId, name, {
       segmentCount: result.segmentPaths.length,

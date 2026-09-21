@@ -21,6 +21,8 @@ export const StorageKeys = {
     `videos/${assetId}/hls/subs/${lang}/seg_${String(i).padStart(5, '0')}.vtt`,
 
   metadataPrefix: (assetId: string) => `videos/${assetId}/metadata/`,
+  /** Segment hashes recorded by the rendition job, so finalize need not re-read the media. */
+  segmentHashes: (assetId: string, r: string) => `videos/${assetId}/metadata/segments-${r}.json`,
   assetJson: (assetId: string) => `videos/${assetId}/metadata/asset.json`,
   integrityJson: (assetId: string) => `videos/${assetId}/metadata/integrity.json`,
 } as const;

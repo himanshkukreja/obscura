@@ -233,6 +233,7 @@ packages/
 | [docs/integrity.md](docs/integrity.md) | Hashing, Merkle trees, signed provenance; what a hash does and does not prove |
 | [docs/data-model.md](docs/data-model.md) | PostgreSQL schema proposal |
 | [docs/api.md](docs/api.md) | REST API design |
+| [docs/scaling-and-cost.md](docs/scaling-and-cost.md) | Measured throughput, capacity per instance, cost vs Mux/Cloudflare/Bunny |
 | [docs/roadmap.md](docs/roadmap.md) | MVP definition and post-MVP phases |
 | [docs/testing.md](docs/testing.md) | Test strategy, fixture matrix, required tests |
 | **[DEPLOY.md](DEPLOY.md)** | **Standalone EC2 deployment: sizing, buckets, IAM, DNS, TLS, verification** |

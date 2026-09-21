@@ -1,7 +1,7 @@
 import { AssetStatus, ObscuraError, ErrorCodes, type IntegrityManifest } from '@obscura/shared';
 import { buildMasterPlaylist } from '@obscura/media';
 import { StorageKeys } from '@obscura/storage';
-import { sha256, buildRenditionIntegrity, finalizeManifest, verifyManifest } from '@obscura/integrity';
+import { buildRenditionIntegrity, finalizeManifest, verifyManifest } from '@obscura/integrity';
 import type { Ctx } from '../context.ts';
 
 /**
@@ -64,30 +64,32 @@ export async function runFinalize(ctx: Ctx, assetId: string): Promise<void> {
 
   const renditionIntegrity = [];
   for (const r of renditions) {
-    // Hashes are of the encrypted bytes as stored, so verification needs no content key.
-    const segments: { index: number; sha256: string; size: number }[] = [];
-    let cursor: string | undefined;
-    const prefix = StorageKeys.renditionPrefix(assetId, r.name);
-    do {
-      const page = await ctx.storage.list(bucket, prefix, cursor);
-      for (const o of page.objects) {
-        const m = /seg_(\d{5})\.(m4s|ts)$/.exec(o.key);
-        if (m) segments.push({ index: Number(m[1]) - 1, sha256: '', size: o.size });
-      }
-      cursor = page.cursor ?? undefined;
-    } while (cursor);
+    // Hashes are of the ENCRYPTED bytes as stored, so verification needs no content key.
+    // They are read from the sidecar the rendition job wrote rather than recomputed: a
+    // two-hour asset across four rungs is gigabytes of media, and re-reading all of it to
+    // learn something we already knew turned finalize into the most expensive step in the
+    // pipeline. Cost is now one small GET per rendition instead of one per segment.
+    const sidecarKey = StorageKeys.segmentHashes(assetId, r.name);
+    const got = await ctx.storage.get(bucket, sidecarKey).catch(() => null);
+    if (!got) {
+      throw new ObscuraError(
+        ErrorCodes.INTEGRITY_FAILED,
+        `Missing segment hashes for rendition ${r.name}; re-run the rendition job`,
+        { retryable: true, detail: { key: sidecarKey } },
+      );
+    }
+    const chunks: Buffer[] = [];
+    for await (const c of got.body) chunks.push(c as Buffer);
+    const side = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+      segments: { index: number; sha256: string; size: number }[];
+    };
+    const segments = [...side.segments].sort((a, b) => a.index - b.index);
 
-    // We stored hashes during the rendition job in the Merkle root; recompute leaf hashes
-    // by reading back, so the manifest reflects what is actually in storage right now.
-    segments.sort((a, b) => a.index - b.index);
-    for (const s of segments) {
-      const ext = r.name && (await ctx.storage.head(bucket, StorageKeys.segment(assetId, r.name, s.index + 1, 'm4s'))) ? 'm4s' : 'ts';
-      const got = await ctx.storage.get(bucket, StorageKeys.segment(assetId, r.name, s.index + 1, ext));
-      const chunks: Buffer[] = [];
-      for await (const c of got.body) chunks.push(c as Buffer);
-      const buf = Buffer.concat(chunks);
-      s.sha256 = sha256(buf);
-      s.size = buf.length;
+    if (segments.length !== (r.segment_count ?? segments.length)) {
+      throw new ObscuraError(
+        ErrorCodes.INTEGRITY_FAILED,
+        `Segment count mismatch for ${r.name}: sidecar has ${segments.length}, database says ${r.segment_count}`,
+      );
     }
 
     renditionIntegrity.push(buildRenditionIntegrity({
