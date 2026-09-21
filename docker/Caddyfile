@@ -23,6 +23,18 @@
 		reverse_proxy api:3001
 	}
 
+	# Shareable watch page. Deliberately NOT behind basic auth: the session token in the
+	# link is the authorization, exactly as it is for /stream. Gating it would mean every
+	# viewer needed an operator password, which defeats the point of a per-viewer session.
+	#
+	# It exists because Chrome, Firefox and Edge have no native HLS - a raw .m3u8 URL only
+	# plays in Safari. This page loads hls.js, so one link works on every browser and OS.
+	handle /watch* {
+		root * /srv/watch
+		try_files /index.html
+		file_server
+	}
+
 	# Reference player. Delete this block if you are embedding Obscura in your own app.
 	#
 	# Gated behind HTTP basic auth: the player is the only route with no authentication

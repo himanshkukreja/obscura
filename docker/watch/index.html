@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Obscura — playback</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0b0b0d; color:#e8e8ea; font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+         min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .wrap { width:100%; max-width:1100px; }
+  .stage { position:relative; background:#000; border-radius:10px; overflow:hidden; aspect-ratio:16/9; }
+  video { width:100%; height:100%; display:block; }
+  #wm { position:absolute; pointer-events:none; font:600 clamp(11px,1.6vw,17px)/1 ui-monospace,monospace;
+        color:#fff; opacity:.38; text-shadow:0 1px 3px rgba(0,0,0,.9); transition:all .6s ease; padding:10px 14px; }
+  .bar { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-top:14px; color:#9a9aa2; font-size:12.5px; }
+  .bar strong { color:#e8e8ea; font-weight:600; }
+  select { background:#1a1a1f; color:#e8e8ea; border:1px solid #33333d; border-radius:6px; padding:5px 8px; font:inherit; }
+  #msg { margin-top:14px; padding:12px 14px; border-radius:8px; background:#2a1416; border:1px solid #5b2226;
+         color:#ffb4b4; display:none; white-space:pre-wrap; }
+  #msg.show { display:block; }
+  .spin { position:absolute; inset:0; display:grid; place-items:center; color:#8a8a93; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <video id="v" controls playsinline crossorigin="anonymous"></video>
+    <div id="wm"></div>
+    <div class="spin" id="spin">loading…</div>
+  </div>
+  <div class="bar">
+    <span>quality <select id="q"><option value="-1">auto</option></select></span>
+    <span id="stat"></span>
+  </div>
+  <div id="msg"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
+<script>
+(function () {
+  var p = new URLSearchParams(location.search);
+  var sid = p.get('s'), tok = p.get('t');
+  var wmText = p.get('w') ? decodeURIComponent(p.get('w')) : '';
+  var video = document.getElementById('v'), msg = document.getElementById('msg');
+  var stat = document.getElementById('stat'), spin = document.getElementById('spin');
+  var qSel = document.getElementById('q'), wm = document.getElementById('wm');
+
+  function fail(t) { msg.textContent = t; msg.classList.add('show'); spin.style.display = 'none'; }
+  if (!sid || !tok) return fail('This link is missing its session. Generate a fresh one with ./watch.sh');
+
+  // Watermark: identifies the VIEWER, moves on a schedule seeded by the session id so a
+  // screen recording can be checked against the expected sequence. Deterrence, not prevention.
+  if (wmText) {
+    wm.textContent = wmText;
+    var corners = [['8%','6%'],['8%','auto'],['auto','6%'],['auto','auto']], i = 0;
+    var seed = 0; for (var c = 0; c < sid.length; c++) seed = (seed * 31 + sid.charCodeAt(c)) >>> 0;
+    (function move() {
+      var s = corners[(seed + i) % 4];
+      wm.style.top = s[0] === 'auto' ? 'auto' : s[0];
+      wm.style.bottom = s[0] === 'auto' ? '10%' : 'auto';
+      wm.style.left = s[1] === 'auto' ? 'auto' : s[1];
+      wm.style.right = s[1] === 'auto' ? '6%' : 'auto';
+      i++; setTimeout(move, 15000);
+    })();
+  }
+
+  var base = location.origin;
+  var manifest = base + '/stream/' + encodeURIComponent(sid) + '/master.m3u8?t=' + encodeURIComponent(tok);
+
+  // Keep the session alive. The heartbeat endpoint needs no API key - it is authorized by
+  // the session id itself - which is what lets this page be shared without leaking a key.
+  function beat() {
+    fetch(base + '/api/v1/playback/' + encodeURIComponent(sid) + '/heartbeat', { method: 'POST' })
+      .then(function (r) {
+        if (r.status === 401) { fail('This session was revoked or expired.'); video.pause(); return null; }
+        return r.ok ? r.json() : null;
+      })
+      .then(function (d) { if (d && d.refresh_after) setTimeout(beat, d.refresh_after * 1000); })
+      .catch(function () { setTimeout(beat, 30000); });
+  }
+  setTimeout(beat, 5000);
+
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Safari / iOS play HLS natively; hls.js is neither needed nor usable there.
+    video.src = manifest;
+    video.addEventListener('loadedmetadata', function () { spin.style.display = 'none'; });
+    stat.textContent = 'native HLS';
+  } else if (window.Hls && window.Hls.isSupported()) {
+    var hls = new Hls({ lowLatencyMode: false });
+    hls.loadSource(manifest);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, function (_e, data) {
+      spin.style.display = 'none';
+      data.levels.forEach(function (l, idx) {
+        var o = document.createElement('option'); o.value = idx;
+        o.textContent = l.height + 'p'; qSel.appendChild(o);
+      });
+    });
+    hls.on(Hls.Events.LEVEL_SWITCHED, function (_e, d) {
+      var l = hls.levels[d.level]; if (l) stat.textContent = l.height + 'p · ' + Math.round(l.bitrate / 1000) + ' kbps';
+    });
+    qSel.onchange = function () { hls.currentLevel = parseInt(qSel.value, 10); };
+    hls.on(Hls.Events.ERROR, function (_e, d) {
+      if (!d.fatal) return;
+      if (d.response && d.response.code === 403) {
+        fail('Segment URLs expired (presigned delivery).\nRaise DELIVERY_PRESIGN_TTL, or reload for a fresh link.');
+      } else if (d.response && d.response.code === 401) {
+        fail('This session was revoked or expired.');
+      } else {
+        fail('Playback error: ' + d.details);
+      }
+    });
+  } else {
+    fail('This browser cannot play HLS.');
+  }
+})();
+</script>
+</body>
+</html>

@@ -90,6 +90,7 @@ services:
       - "443:443"
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker/watch:/srv/watch:ro
       - caddydata:/data
       - caddyconfig:/config
     # env_file, not `environment:`, for the basic-auth credential: a bcrypt hash is full
