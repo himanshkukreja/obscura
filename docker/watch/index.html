@@ -36,20 +36,26 @@
   </div>
   <div id="msg"></div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.20/hls.min.js"></script>
 <script>
 (function () {
   var p = new URLSearchParams(location.search);
-  var sid = p.get('s'), tok = p.get('t');
+  var sid = p.get('s');
   var wmText = p.get('w') ? decodeURIComponent(p.get('w')) : '';
   var video = document.getElementById('v'), msg = document.getElementById('msg');
   var stat = document.getElementById('stat'), spin = document.getElementById('spin');
   var qSel = document.getElementById('q'), wm = document.getElementById('wm');
 
-  function fail(t) { msg.textContent = t; msg.classList.add('show'); spin.style.display = 'none'; }
-  if (!sid || !tok) return fail('This link is missing its session. Generate a fresh one with ./watch.sh');
+  // The live token. Every request hls.js makes is rewritten to carry THIS value, not the
+  // one the page was opened with - a token lives ~3 minutes while a session lives hours,
+  // so anything that pins a token at startup breaks on the first request after it expires
+  // (a level switch, a key refetch). apps/player/src/Player.tsx does the same.
+  var token = p.get('t');
 
-  // Watermark: identifies the VIEWER, moves on a schedule seeded by the session id so a
+  function fail(t) { msg.textContent = t; msg.classList.add('show'); spin.style.display = 'none'; }
+  if (!sid || !token) return fail('This link is missing its session. Generate a fresh one with scripts/watch-url.sh');
+
+  // Watermark: identifies the VIEWER, moving on a schedule seeded by the session id so a
   // screen recording can be checked against the expected sequence. Deterrence, not prevention.
   if (wmText) {
     wm.textContent = wmText;
@@ -66,68 +72,87 @@
   }
 
   var base = location.origin;
+  var manifest = base + '/stream/' + encodeURIComponent(sid) + '/master.m3u8?t=' + encodeURIComponent(token);
 
-  // Keep the session alive. The heartbeat endpoint needs no API key - it is authorized by
-  // the session id itself - which is what lets this page be shared without leaking a key.
+  // Heartbeat keeps the session alive AND refreshes `token`. It needs no API key, being
+  // authorized by the session id itself, which is what lets this page be shared.
   function beat() {
     return fetch(base + '/api/v1/playback/' + encodeURIComponent(sid) + '/heartbeat', { method: 'POST' })
       .then(function (r) {
-        if (r.status === 401) { return r.json().then(function (e) { throw e; }); }
+        if (r.status === 401) return r.json().then(function (e) { throw e; });
         return r.ok ? r.json() : null;
       })
-      .then(function (d) { if (d && d.refresh_after) setTimeout(beat, d.refresh_after * 1000); return d; });
+      .then(function (d) {
+        if (d && d.token) token = d.token;
+        if (d && d.refresh_after) setTimeout(beat, d.refresh_after * 1000);
+        return d;
+      });
   }
 
-  // Mint a FRESH token before touching the manifest, rather than trusting the one in the
-  // link. A playback token lives ~3 minutes but the session lives hours, so a link opened
-  // even slightly later would 401 on its first request - which makes it useless as
-  // something you send to somebody. The heartbeat is unauthenticated by design, so the
-  // page can do this itself.
+  function withToken(url) {
+    var u = new URL(url, base);
+    if (u.searchParams.has('t')) { u.searchParams.set('t', token); return u.toString(); }
+    return url;   // presigned S3 segment urls carry their own signature - leave them alone
+  }
+
+  function play() {
+    if (window.Hls && window.Hls.isSupported()) {
+      var hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 30,
+        abrEwmaDefaultEstimate: 3000000,
+        capLevelToPlayerSize: false,
+        startLevel: -1,
+        xhrSetup: function (xhr, url) { xhr.open('GET', withToken(url), true); }
+      });
+      hls.loadSource(manifest);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, function (_e, data) {
+        spin.style.display = 'none';
+        data.levels.forEach(function (l, idx) {
+          var o = document.createElement('option'); o.value = idx;
+          o.textContent = l.height + 'p'; qSel.appendChild(o);
+        });
+      });
+      hls.on(Hls.Events.LEVEL_SWITCHED, function (_e, d) {
+        var l = hls.levels[d.level];
+        if (l) stat.textContent = l.height + 'p · ' + Math.round(l.bitrate / 1000) + ' kbps';
+      });
+      qSel.onchange = function () { hls.currentLevel = parseInt(qSel.value, 10); };
+      hls.on(Hls.Events.ERROR, function (_e, d) {
+        if (!d.fatal) return;
+        var code = d.response && d.response.code;
+        if (code === 403) fail('Segment URLs expired.\nRaise DELIVERY_PRESIGN_TTL, or reload this page.');
+        else if (code === 401) fail('This session was revoked or has expired.');
+        else if (d.type === Hls.ErrorTypes.NETWORK_ERROR) { hls.startLoad(); }
+        else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); }
+        else fail('Playback error: ' + d.details);
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari / iOS: native HLS. No xhrSetup hook exists, so the session must outlive
+      // playback on its own - which is why DELIVERY_PRESIGN_TTL matters most here.
+      video.src = manifest;
+      video.addEventListener('loadedmetadata', function () { spin.style.display = 'none'; });
+      stat.textContent = 'native HLS';
+    } else {
+      fail('This browser cannot play HLS.');
+    }
+  }
+
+  // Refresh the token BEFORE the first request, so a link that was generated a while ago
+  // still works. Then play.
   beat()
-    .then(function (d) { start((d && d.token) || tok); })
+    .then(function () {
+      manifest = base + '/stream/' + encodeURIComponent(sid) + '/master.m3u8?t=' + encodeURIComponent(token);
+      play();
+    })
     .catch(function (e) {
       var code = e && e.error && e.error.code;
       if (code === 'session_revoked') fail('This link has been revoked.');
       else if (code === 'session_expired') fail('This link has expired. Ask for a new one.');
-      else start(tok);   // network hiccup: fall back to the token in the URL
+      else play();   // network hiccup: try with the token from the link
     });
-
-  function start(token) {
-  var manifest = base + '/stream/' + encodeURIComponent(sid) + '/master.m3u8?t=' + encodeURIComponent(token);
-  if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    // Safari / iOS play HLS natively; hls.js is neither needed nor usable there.
-    video.src = manifest;
-    video.addEventListener('loadedmetadata', function () { spin.style.display = 'none'; });
-    stat.textContent = 'native HLS';
-  } else if (window.Hls && window.Hls.isSupported()) {
-    var hls = new Hls({ lowLatencyMode: false });
-    hls.loadSource(manifest);
-    hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, function (_e, data) {
-      spin.style.display = 'none';
-      data.levels.forEach(function (l, idx) {
-        var o = document.createElement('option'); o.value = idx;
-        o.textContent = l.height + 'p'; qSel.appendChild(o);
-      });
-    });
-    hls.on(Hls.Events.LEVEL_SWITCHED, function (_e, d) {
-      var l = hls.levels[d.level]; if (l) stat.textContent = l.height + 'p · ' + Math.round(l.bitrate / 1000) + ' kbps';
-    });
-    qSel.onchange = function () { hls.currentLevel = parseInt(qSel.value, 10); };
-    hls.on(Hls.Events.ERROR, function (_e, d) {
-      if (!d.fatal) return;
-      if (d.response && d.response.code === 403) {
-        fail('Segment URLs expired (presigned delivery).\nRaise DELIVERY_PRESIGN_TTL, or reload for a fresh link.');
-      } else if (d.response && d.response.code === 401) {
-        fail('This session was revoked or expired.');
-      } else {
-        fail('Playback error: ' + d.details);
-      }
-    });
-  } else {
-    fail('This browser cannot play HLS.');
-  }
-  }
 })();
 </script>
 </body>
