@@ -30,8 +30,13 @@ export interface Config {
      */
     publicEndpoint: string | undefined;
     region: string;
-    accessKeyId: string;
-    secretAccessKey: string;
+    /**
+     * Undefined means "no static credentials": the AWS SDK falls back to its default
+     * provider chain, which is how an EC2 instance role reaches storage with no
+     * long-lived secret anywhere on the box.
+     */
+    accessKeyId: string | undefined;
+    secretAccessKey: string | undefined;
     forcePathStyle: boolean;
     sourceBucket: string;
     deliveryBucket: string;
@@ -98,6 +103,22 @@ const num = (k: string, d: number) => {
 const bool = (k: string, d: boolean) => {
   const v = process.env[k];
   return v === undefined || v === '' ? d : v === 'true' || v === '1';
+};
+/**
+ * Credentials are three-state, unlike everything else here.
+ *
+ *   unset        -> the development default, so a bare `docker compose up` works
+ *   set to ''    -> explicitly NO static credentials: defer to the AWS SDK's provider
+ *                   chain (environment, shared config, then the EC2 instance role)
+ *   set to value -> use it
+ *
+ * The middle case is what DEPLOY.md asks operators to write, and collapsing it into the
+ * default silently shipped MinIO's dev key to real S3.
+ */
+const optionalCredential = (k: string, d: string): string | undefined => {
+  const v = process.env[k];
+  if (v === undefined) return d;
+  return v === '' ? undefined : v;
 };
 const key32 = (k: string, d: string): Buffer => {
   const b = Buffer.from(env(k, d), 'base64');
@@ -177,8 +198,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       endpoint: process.env['S3_ENDPOINT'] || undefined,
       publicEndpoint: process.env['S3_PUBLIC_ENDPOINT'] || process.env['S3_ENDPOINT'] || undefined,
       region: env('S3_REGION', 'us-east-1'),
-      accessKeyId: env('S3_ACCESS_KEY_ID', 'obscura'),
-      secretAccessKey: env('S3_SECRET_ACCESS_KEY', 'obscura123'),
+      accessKeyId: optionalCredential('S3_ACCESS_KEY_ID', 'obscura'),
+      secretAccessKey: optionalCredential('S3_SECRET_ACCESS_KEY', 'obscura123'),
       forcePathStyle: bool('S3_FORCE_PATH_STYLE', true),
       sourceBucket: env('S3_SOURCE_BUCKET', 'obscura-source'),
       deliveryBucket: env('S3_DELIVERY_BUCKET', 'obscura-delivery'),

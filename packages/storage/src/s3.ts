@@ -16,8 +16,9 @@ export interface S3Config {
   /** Used only for signing URLs handed to clients; defaults to `endpoint`. */
   publicEndpoint?: string | undefined;
   region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
+  /** Omit both to use the AWS SDK's default provider chain (e.g. an EC2 instance role). */
+  accessKeyId?: string | undefined;
+  secretAccessKey?: string | undefined;
   forcePathStyle: boolean;
 }
 
@@ -46,10 +47,15 @@ export class S3StorageProvider implements StorageProvider {
   private readonly signingClient: S3Client;
 
   constructor(cfg: S3Config) {
+    // Pass `credentials` ONLY when we actually have them. Handing the SDK a credentials
+    // object pins it to those keys and disables its provider chain, so an instance role
+    // could never be discovered - the deployment shape DEPLOY.md recommends.
     const base = {
       region: cfg.region,
       forcePathStyle: cfg.forcePathStyle,
-      credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      ...(cfg.accessKeyId && cfg.secretAccessKey
+        ? { credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } }
+        : {}),
     };
     this.client = new S3Client({ ...base, endpoint: cfg.endpoint });
     this.signingClient = cfg.publicEndpoint && cfg.publicEndpoint !== cfg.endpoint
