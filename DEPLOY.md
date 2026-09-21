@@ -32,6 +32,11 @@ every core it is given.
 Storage: **40 GB gp3**. Media lives in S3; the disk holds container images (~2 GB) and
 transcode scratch — roughly 3× the largest source file, transiently.
 
+Expect about **13 MB of stored renditions per minute of 720p video**, measured on a real
+interview. If you also retain the source, add its own bitrate on top — though nothing reads
+it once an asset is READY, so a lifecycle rule expiring it is usually right. See
+[docs/scaling-and-cost.md](docs/scaling-and-cost.md).
+
 OS: Amazon Linux 2023 or Ubuntu 22.04+. Commands below cover both.
 
 ### Security group
@@ -416,6 +421,9 @@ Migrations run automatically on API start. Take a database dump first.
 
 ## Known gaps
 
+- **Audio is stored once per rendition, not once per asset.** HLS supports a separate
+  audio rendition group; the packager does not use it, so a three-rung ladder stores three
+  copies of the same 128k track. Roughly 15% of a short asset's bytes, less on a long one.
 - **No CDN.** `cdn_signed` exists as a strategy with no edge function behind it.
 - **No CDN cache invalidation on delete.** The record honestly says `requested: false`;
   key destruction is what makes cached copies inert.

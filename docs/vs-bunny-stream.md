@@ -8,10 +8,15 @@ streaming platform. Obscura is a delivery and custody layer for video you are ac
 for, and it does a dozen things Bunny structurally cannot — starting with keeping the media
 in your own account and being able to prove it was destroyed.
 
-On cost, compared like for like — both on Bunny's infrastructure — they are within $26 a
-month at 5,000 videos, and Obscura is cheaper at 50,000. The widely quoted "6× cheaper"
+On cost, compared like for like — both on Bunny's infrastructure — they were within $26 a
+month at 5,000 videos, and Obscura was cheaper at 50,000. The widely quoted "6× cheaper"
 compares Obscura on AWS with Bunny on Bunny, which measures storage vendors rather than
 products.
+
+Those figures now **understate** Obscura. Quality-targeted encoding cut stored bytes by
+about two thirds after this comparison was written, so every Obscura column in §3 is
+roughly 3× too high. The conclusion moves from "level with Bunny" to "cheaper than Bunny"
+at every scale — but see the note in §3 before quoting a number.
 
 ---
 
@@ -105,6 +110,15 @@ can neither verify nor evidence onward.
 The 6× figure compares Obscura-on-AWS with Bunny-on-Bunny. Put both on the same
 infrastructure and it collapses.
 
+> **These numbers predate quality-targeted encoding and overstate Obscura by roughly 3×.**
+> Storage per minute fell from 39 MB to 13 MB and delivered bytes from 21 MB to 7 MB, both
+> measured on a real interview — see
+> [scaling-and-cost.md §3](scaling-and-cost.md#3-what-each-minute-of-video-costs-in-bytes).
+> The S3 and R2 columns are corrected in
+> [scaling-and-cost.md §4b](scaling-and-cost.md#4b-the-fairer-comparison-marginal-cost);
+> the Bunny-infrastructure columns below have not been recomputed, because doing it
+> honestly needs current Bunny Storage and CDN rates rather than a scaled estimate.
+
 Marginal cost of adding streaming, 12-minute interviews, 2 views each, 12-month retention:
 
 | Scenario | Obscura on S3 | Obscura on R2 | Obscura on R2 + Bunny CDN | **Obscura on Bunny Storage** | **Bunny Stream** |
@@ -113,7 +127,10 @@ Marginal cost of adding streaming, 12-minute interviews, 2 views each, 12-month 
 | B 5,000/mo | $1,111 | $559 | $584 | **$307** | **$281** |
 | C 50,000/mo | $10,823 | $5,303 | $5,554 | **$2,782** | **$2,810** |
 
-At 5,000 interviews/month the difference is **$26**. At 50,000, **Obscura is $29 cheaper**.
+At 5,000 interviews/month the difference was **$26**, and at 50,000 **Obscura was $29
+cheaper** — before the encoder change. With storage down two thirds, Obscura is now ahead
+at every scale in this table; the exact margin awaits a recomputation against current
+Bunny rates.
 
 The mechanism is simple. Storage and delivery cost the same in both columns — same vendor,
 same rates. Obscura adds compute ($143–$1,144). Bunny Stream adds **S3 egress to hand them

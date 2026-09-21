@@ -59,12 +59,30 @@ it; a sustained transcode drains the balance and then throttles the entire insta
 
 ## 3. What each minute of video costs in bytes
 
+Measured end to end on a real 13.9-minute 720p interview, encoded by the shipped ladder
+and read back out of the delivery bucket:
+
 | | 720p workload | 1080p workload |
 |---|---|---|
-| All renditions | 39 MB/min | 77 MB/min |
+| All renditions | **13 MB/min** | 26 MB/min † |
 | Source retained | 18 MB/min | 44 MB/min |
-| **Stored total** | **58 MB/min** | **121 MB/min** |
-| Delivered, top rung | 21 MB/min watched | 38 MB/min watched |
+| **Stored total** | **31 MB/min** | **70 MB/min** |
+| Delivered, top rung | 7 MB/min watched | 13 MB/min watched † |
+
+† 720p is measured; the 1080p row is the same ratio applied to the previous figures, not a
+separate measurement. Treat it as an estimate.
+
+**These numbers changed by a factor of three when encoding became quality-targeted.** The
+figures here were 39 MB/min of renditions and 21 MB/min delivered, because each rung was
+asked for a fixed bitrate and spent it whether the picture needed it or not. The same
+interview now stores 180 MB instead of 535 MB — and at SSIM 0.988 against the source, the
+difference is not visible. See [architecture.md](architecture.md#transcode-decisions).
+
+**Source retention is now optional.** Nothing reads the source once an asset is READY —
+not playback, not deletion, not `obscura verify`, which re-hashes only the delivery bucket.
+A lifecycle rule expiring it removes 18 of those 31 MB/min. The only thing it costs is
+re-encoding without re-uploading, which matters when you change the ladder. Keep it if you
+have no other copy; expire it if the original already lives somewhere you control.
 
 ## 4. Total cost, three scenarios
 
@@ -76,18 +94,22 @@ for that.
 
 | Scenario | Ingest/mo | Library | **Obscura (S3)** | Cloudflare Stream | Mux | Bunny Stream |
 |---|---|---|---|---|---|---|
-| **A** 500 interviews/mo | 6,000 min | 4.0 TB | **$276** | $372 | $849 | $23 |
-| **B** 5,000/mo | 60,000 min | 39.6 TB | **$1,436** | $3,720 | $8,490 | $228 |
-| **C** 50,000/mo | 600,000 min | 396 TB | **$14,045** | $37,200 | $84,900 | $2,281 |
+| **A** 500 interviews/mo | 6,000 min | 2.1 TB | **$211** | $372 | $849 | $23 |
+| **B** 5,000/mo | 60,000 min | 21.3 TB | **$784** | $3,720 | $8,490 | $228 |
+| **C** 50,000/mo | 600,000 min | 213 TB | **$7,805** | $37,200 | $84,900 | $2,281 |
 
 Obscura at scenario B breaks down as:
 
 ```
 compute   1x c7i.xlarge      $   143     (1,332 CPU-hours of transcode)
-storage   39.6 TB            $ 1,015     ← 71% of the bill
-egress    2.45 TB            $   275
+storage   21.3 TB            $   545     ← 69% of the bill
+egress    0.84 TB            $    92
 disk      40 GB gp3          $     4
 ```
+
+Expiring the retained source (§3) takes scenario B's library to 8.9 TB and the bill to
+about $467. Transitioning renditions older than 30 days to a colder class takes it lower
+again — most interviews are watched in their first fortnight and never afterwards.
 
 **Storage dominates, and it is not close.** Compute is 10% of the bill at any realistic
 scale. Every instinct to optimise the transcode is misdirected effort.
@@ -111,15 +133,17 @@ Baseline you pay regardless, 720p sources, 12-month retention:
 
 | Scenario | Obscura (S3) | **Obscura (R2)** | Bunny | Cloudflare Stream | Mux |
 |---|---|---|---|---|---|
-| A 500/mo | $240 | **$185** | $28 | $384 | $861 |
-| B 5,000/mo | $1,111 | **$559** | $281 | $3,837 | $8,607 |
-| C 50,000/mo | $10,823 | **$5,303** | $2,810 | $38,373 | $86,073 |
+| A 500/mo | $179 | **$161** | $28 | $384 | $861 |
+| B 5,000/mo | $468 | **$284** | $281 | $3,837 | $8,607 |
+| C 50,000/mo | $4,641 | **$2,805** | $2,810 | $38,373 | $86,073 |
 
 This changes the picture materially:
 
-- **vs Mux: 7.7× cheaper** (was 5.9× on total cost)
-- **vs Cloudflare Stream: 3.5× cheaper** (was 2.6×)
-- **vs Bunny: 2× more expensive on R2** — down from 6×
+- **vs Mux: 30× cheaper** on R2 at scenario B
+- **vs Cloudflare Stream: 13.5× cheaper**
+- **vs Bunny: level.** On R2 at scenario B the two are within 1%, and at scenario C
+  Obscura is marginally cheaper. That is the headline change from quality-targeted
+  encoding: the one comparison Obscura used to lose on price it now draws.
 
 ### The cost that appears on nobody's pricing page
 
@@ -238,14 +262,17 @@ Scenario B, identical workload, only the bucket changes:
 
 | Backend | Storage $/GB | Egress $/GB | Storage | Egress | Total/mo |
 |---|---|---|---|---|---|
-| AWS S3 Standard | 0.0250 | 0.1093 | $1,015 | $275 | **$1,436** |
-| S3 + Intelligent-Tiering | 0.0125 | 0.1093 | $508 | $275 | **$929** |
-| **Cloudflare R2** | 0.0150 | **0.00** | $609 | $0 | **$756** |
-| Backblaze B2 + Cloudflare | 0.0060 | 0.00 | $244 | $0 | **$390** |
+| AWS S3 Standard | 0.0250 | 0.1093 | $545 | $92 | **$784** |
+| S3 + Intelligent-Tiering | 0.0125 | 0.1093 | $272 | $92 | **$512** |
+| **Cloudflare R2** | 0.0150 | **0.00** | $327 | $0 | **$474** |
+| Backblaze B2 + Cloudflare | 0.0060 | 0.00 | $131 | $0 | **$278** |
 
 R2 and B2 have **zero egress**. Obscura's storage layer is the S3 API, so this is a config
 change, not a migration — `S3_ENDPOINT` and two bucket names. Moving to R2 cuts the bill
-47% with no code change and no loss of custody.
+40% with no code change and no loss of custody.
+
+Egress matters less than it used to: quality-targeted encoding cut the delivered bytes
+along with the stored ones, so zero-egress backends now win mostly on storage price.
 
 One caveat already documented: R2 presigned URLs are not served through Cloudflare's cache
 and bypass custom domains, so on R2 you want the `cdn_signed` strategy with a Worker —
@@ -258,12 +285,12 @@ Scenario B on R2:
 
 | Retention | Library | Storage | Total/mo | vs 12 months |
 |---|---|---|---|---|
-| 1 month | 3.3 TB | $51 | $197 | −74% |
-| 3 months | 9.9 TB | $152 | $299 | −60% |
-| 6 months | 19.8 TB | $305 | $451 | −40% |
-| **12 months** | 39.6 TB | $609 | **$756** | — |
-| 24 months | 79.3 TB | $1,218 | $1,365 | +81% |
-| 60 months | 198 TB | $3,045 | $3,192 | +322% |
+| 1 month | 1.8 TB | $27 | $174 | −63% |
+| 3 months | 5.3 TB | $82 | $229 | −52% |
+| 6 months | 10.6 TB | $163 | $310 | −34% |
+| **12 months** | 21.3 TB | $327 | **$474** | — |
+| 24 months | 42.6 TB | $654 | $801 | +69% |
+| 60 months | 106 TB | $1,635 | $1,782 | +276% |
 
 Obscura already enforces retention (`asset_default_ttl_days`, plus the scheduled job) and
 deletion is verified rather than best-effort. **Retention is both your largest cost lever
@@ -330,7 +357,7 @@ segment. At scenario C that is roughly 14 TB/month of pointless reads removed.
 ## 8. Recommendations
 
 **At your scale today** (scenario A–B): one `c7i.xlarge`, S3 or R2, 12-month retention.
-$276–$1,436/month on S3, $197–$756 on R2. Compute is noise; do not optimise it.
+$211–$784/month on S3, $174–$474 on R2. Compute is noise; do not optimise it.
 
 **Move to R2 when storage passes ~10 TB.** Zero egress and lower per-GB. Config change only.
 
