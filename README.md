@@ -39,6 +39,51 @@ media is regulated personal data you're accountable for.
 If your video is medical, legal, educational, HR, financial, or otherwise about a person,
 this is aimed at you.
 
+## What a viewer actually receives
+
+The original is never addressable. The manifest points at a session-scoped key endpoint,
+and the segments on the wire are AES-128 ciphertext — no `styp`, no `moof`, useless to
+anyone without a live session.
+
+<p align="center">
+  <img src="docs/media/delivery.gif" alt="The source returns 403; the playlist references a session-scoped key; segments are ciphertext" width="900">
+</p>
+
+## Revoke a session. Delete an asset. Prove it.
+
+Revocation bites at the key endpoint **immediately**, even while the token is still
+signature-valid. Deletion enumerates storage rather than trusting the database — so it
+finds objects that failed jobs orphaned — then destroys the content key, re-lists to
+confirm empty, and signs a record that outlives the asset.
+
+<p align="center">
+  <img src="docs/media/deletion.gif" alt="Session revoked, key endpoint returns 401, asset deleted with a signed record that survives" width="900">
+</p>
+
+Destroying the content key is the strongest guarantee here. Object deletion is best-effort
+against replicas, snapshots and edge caches you cannot enumerate — but whatever survives in
+them is ciphertext with no key left anywhere in the world.
+
+## Every artifact is hashed, and the set is signed
+
+<p align="center">
+  <img src="docs/media/integrity.gif" alt="obscura verify re-hashes every object against a signed Merkle manifest" width="900">
+</p>
+
+## Watermarking
+
+Session identity rendered by the player, on a schedule seeded from the session id so a
+recording can be checked against the expected sequence.
+
+<p align="center">
+  <img src="docs/media/watermark.gif" alt="A watermark showing viewer identity moving between corners" width="680">
+</p>
+
+It identifies **the viewer**, not the asset — watermarking content with its own identifier
+answers a question you already knew the answer to. And it is deterrence, not prevention:
+it appears in a screen recording, and it is removable in seconds by anyone who opens
+devtools. We label it accordingly.
+
 ## What it protects against
 
 | | |
@@ -190,7 +235,8 @@ packages/
 | [docs/api.md](docs/api.md) | REST API design |
 | [docs/roadmap.md](docs/roadmap.md) | MVP definition and post-MVP phases |
 | [docs/testing.md](docs/testing.md) | Test strategy, fixture matrix, required tests |
-| [docs/deployment.md](docs/deployment.md) | Local testing, EC2 deployment, operating it |
+| **[DEPLOY.md](DEPLOY.md)** | **Standalone EC2 deployment: sizing, buckets, IAM, DNS, TLS, verification** |
+| [docs/deployment.md](docs/deployment.md) | Local testing and operating it |
 | [docs/adr/](docs/adr/README.md) | Architecture decision records (12) |
 
 ## Non-goals
