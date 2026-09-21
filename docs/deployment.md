@@ -99,23 +99,65 @@ appropriate for them.
 
 ### 1. Buckets and IAM
 
+Create two buckets — never one — and lock both down:
+
 ```bash
-# From your laptop, with credentials that can create buckets
-export AWS_REGION=ap-south-1 PLAYER_ORIGIN=https://video.example.com
-./examples/aws/setup-buckets.sh acme-prod
+REGION=ap-south-1
+for B in obscura-source-acme obscura-delivery-acme; do
+  aws s3api create-bucket --bucket "$B" --region "$REGION" \
+    --create-bucket-configuration LocationConstraint="$REGION"
+  aws s3api put-public-access-block --bucket "$B" --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  aws s3api put-bucket-encryption --bucket "$B" --server-side-encryption-configuration \
+    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+  aws s3api put-bucket-versioning --bucket "$B" --versioning-configuration Status=Suspended
+done
 ```
 
-This creates both buckets, blocks public access, enables SSE, **suspends versioning**, and
-applies CORS to the delivery bucket only.
+**CORS on the delivery bucket only**, and only when using `presigned` delivery — hls.js
+fetches segments by XHR, so without it the browser blocks every segment and playback fails
+with an opaque network error:
+
+```bash
+aws s3api put-bucket-cors --bucket obscura-delivery-acme --cors-configuration '{
+  "CORSRules": [{
+    "AllowedOrigins": ["https://video.example.com"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range", "If-None-Match", "If-Modified-Since"],
+    "ExposeHeaders": ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+    "MaxAgeSeconds": 3000
+  }]
+}'
+```
 
 > **Versioning is suspended deliberately.** With versioning on, deleting an object leaves
 > prior versions behind, and "verified deletion" becomes a false claim — the purge would
 > report success while the content still exists. If you need versioning, add a lifecycle
 > rule that permanently expires noncurrent versions well inside your deletion SLA.
 
-Then create an **instance role** from `examples/aws/iam-policy.json` (replace `CHANGEME`
-and the account) and attach it to the EC2 instance. Use the role, not access keys: the
-AWS SDK picks it up automatically, and there is then no long-lived credential to leak.
+Then give the instance a role scoped to those two buckets and nothing else. Use a role
+rather than access keys: the AWS SDK picks it up automatically and there is no long-lived
+credential to leak.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow",
+      "Action": ["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload"],
+      "Resource": ["arn:aws:s3:::obscura-source-acme/videos/*",
+                   "arn:aws:s3:::obscura-delivery-acme/videos/*"] },
+    { "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": ["arn:aws:s3:::obscura-source-acme",
+                   "arn:aws:s3:::obscura-delivery-acme"],
+      "Condition": { "StringLike": { "s3:prefix": "videos/*" } } }
+  ]
+}
+```
+
+`s3:ListBucket` is required, not optional: the deletion job enumerates storage rather than
+trusting the database, so that it finds objects a failed job orphaned.
 
 ### 2. Instance setup
 

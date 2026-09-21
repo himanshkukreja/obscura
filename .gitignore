@@ -48,3 +48,8 @@ Thumbs.db
 !.vscode/extensions.json
 *.swp
 *~
+
+# ── deployment specifics, kept out of the public repo ───────────────────────
+# Cloud-provider IAM policies, bucket setup and deploy-user scripts live outside version
+# control. They contain no secrets, but they describe a specific deployment's shape.
+examples/aws/
