@@ -126,39 +126,56 @@ deliberately returns no `source_key`, `source_bucket`, or any URL to the origina
 
 ## 3. Getting a playable URL out
 
-### The short version
+### Every way, shortest first
 
 ```bash
-./scripts/watch-url.sh <asset-id> recruiter@example.com
+# by asset id
+./scripts/watch-url.sh 01a0c3ca-bdc5-7354-878b-6ce6af292578
+
+# by a fragment of the title or filename - errors if it matches more than one
+./scripts/watch-url.sh "Interview 4821"
+
+# name the viewer: this is what the watermark shows and what the access log records
+./scripts/watch-url.sh "Interview 4821" recruiter@example.com
+
+# the raw .m3u8 instead of the watch page, for VLC / ffplay / your own hls.js
+./scripts/watch-url.sh --manifest 01a0c3ca-bdc5-7354-878b-6ce6af292578
+
+# open it immediately
+open "$(./scripts/watch-url.sh 'Interview 4821')"          # macOS
+xdg-open "$(./scripts/watch-url.sh 'Interview 4821')"      # Linux
+
+# onto the clipboard
+./scripts/watch-url.sh "Interview 4821" | pbcopy           # macOS
+./scripts/watch-url.sh "Interview 4821" | xclip -sel clip  # Linux
+
+# newest asset, no id needed
+./scripts/watch-url.sh "$(./scripts/list-assets.sh --json | jq -r '.data[0].asset_id')"
 ```
 
-Prints a `/watch?s=…&t=…` URL that plays **in any browser on any OS**. Open it, send it,
-embed it.
+### Playing it
 
-### Why not just use the manifest URL
+| Where | Command |
+|---|---|
+| Any browser, any OS | Open the `/watch` URL |
+| VLC | `vlc "$(./scripts/watch-url.sh --manifest <id>)"` |
+| ffplay | `ffplay "$(./scripts/watch-url.sh --manifest <id>)"` |
+| mpv | `mpv "$(./scripts/watch-url.sh --manifest <id>)"` |
+| Safari only | The `--manifest` URL opens directly |
 
-Because `.m3u8` only plays natively in Safari and on iOS. Chrome, Firefox and Edge have no
-HLS support at all — paste a manifest URL into Chrome and it downloads a text file. That is
-a browser limitation; no server-side change fixes it.
-
-The `/watch` page loads [hls.js](https://github.com/video-dev/hls.js), which implements HLS
-over Media Source Extensions, and falls back to native HLS on Safari. It also keeps the
-session alive, which a pasted URL cannot do.
-
-If you want the raw manifest anyway — for VLC, ffplay, or your own hls.js integration:
-
-```bash
-./scripts/watch-url.sh --manifest <asset-id>
-ffplay "$(./scripts/watch-url.sh --manifest <asset-id>)"
-```
+**A raw `.m3u8` will not play in Chrome, Firefox or Edge.** None of them have native
+HLS; the URL downloads a text file. That is a browser limitation, not a deployment
+fault, and it is the reason `/watch` exists — it loads hls.js, so one link works
+everywhere. Use `--manifest` only for desktop players and your own integration.
 
 ### The API call underneath
 
-One POST. Everything else is convenience around it.
+Everything above wraps one POST:
 
 ```bash
 curl -s -X POST "$OBSCURA_API/api/v1/assets/$ID/playback-session" \
-  -H "Authorization: Bearer $OBSCURA_KEY" -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $OBSCURA_KEY" \
+  -H 'Content-Type: application/json' \
   -d '{"subject_ref":"user-42","subject_label":"recruiter@example.com"}' | jq
 ```
 
@@ -169,27 +186,47 @@ curl -s -X POST "$OBSCURA_API/api/v1/assets/$ID/playback-session" \
   "manifest_url": "https://…/stream/s_…/master.m3u8?t=v1.…",
   "expires_at": "…",           // session: hours
   "token_expires_at": "…",     // token: minutes
-  "refresh_after": 108,        // call heartbeat after this many seconds
+  "refresh_after": 108,        // heartbeat after this many seconds
   "watermark": { "text": "recruiter@example.com · 01a0c3ca", … }
 }
 ```
 
+Optional fields on the request:
+
+```bash
+-d '{
+  "subject_ref": "user-42",            # required. who is watching, for the access log
+  "subject_label": "recruiter@x.com",  # shown in the watermark; defaults to subject_ref
+  "ttl_seconds": 3600,                 # session lifetime, capped at 86400
+  "client_binding": "<opaque>",        # stored as a salted hash
+  "watermark": { "enabled": true, "text_template": "{{user.label}}" }
+}'
+```
+
+Build a `/watch` URL from that response yourself:
+
+```bash
+S=$(curl -s -X POST "$OBSCURA_API/api/v1/assets/$ID/playback-session" \
+  -H "Authorization: Bearer $OBSCURA_KEY" -H 'Content-Type: application/json' \
+  -d '{"subject_ref":"user-42"}')
+echo "$OBSCURA_API/watch?s=$(echo "$S" | jq -r .session_id)&t=$(echo "$S" | jq -r .token)"
+```
+
 Every call mints a **new session** — separately logged, watermarked and revocable. Do not
-loop it to "refresh" a URL; that accumulates sessions against the asset's access log. To
-extend one session, use the heartbeat:
+loop it to refresh a URL; that fills the access log with sessions nobody watched. Extend a
+session instead:
 
 ```bash
 curl -s -X POST "$OBSCURA_API/api/v1/playback/$SID/heartbeat" | jq -r .token
 ```
 
-The heartbeat endpoint takes **no API key** — it is authorized by the session id itself.
-That is deliberate, and it is what lets a watch link be shared without leaking an operator
-credential.
+The heartbeat takes **no API key** — it is authorized by the session id itself. That is
+what lets a watch link be shared without leaking an operator credential, and what lets the
+`/watch` page refresh its own token.
 
 ### From your own application
 
-The shape that matters in production: your backend decides who may watch, mints the
-session, and hands the browser something that cannot be escalated.
+Your backend decides who may watch and mints the session; the browser never sees the key.
 
 ```ts
 const r = await fetch(`${OBSCURA}/api/v1/assets/${assetId}/playback-session`, {
@@ -198,19 +235,36 @@ const r = await fetch(`${OBSCURA}/api/v1/assets/${assetId}/playback-session`, {
              'Content-Type': 'application/json' },
   body: JSON.stringify({ subject_ref: user.id, subject_label: user.email }),
 });
-const session = await r.json();      // safe to hand to the browser
+const session = await r.json();     // safe to hand to the browser
 ```
 
-Then load `session.manifest_url` with hls.js and call the heartbeat every
-`session.refresh_after` seconds. `apps/player/src/Player.tsx` is a complete reference; the
-`/watch` page in `docker/watch/index.html` is a smaller one.
+In the browser, two things are non-negotiable, and both are easy to miss:
 
-### The UI
+```js
+// 1. rewrite the token on EVERY request, not just the first. A token lives ~3 minutes;
+//    hls.js keeps fetching variant playlists and keys long after that.
+const hls = new Hls({
+  xhrSetup: (xhr, url) => {
+    const u = new URL(url, location.origin);
+    if (u.searchParams.has('t')) { u.searchParams.set('t', currentToken); xhr.open('GET', u.toString(), true); }
+  },
+});
 
-The reference player at `/` lists assets and plays them, handling sessions and heartbeat
-for you. It needs an API key pasted into its Connection panel, which means **it is an
-operator tool, not something to put in front of viewers** — gate it (see
-[DEPLOY.md](../DEPLOY.md)) and send viewers `/watch` links instead.
+// 2. heartbeat before refresh_after elapses, and keep currentToken updated from it
+setInterval(async () => {
+  const r = await fetch(`${OBSCURA}/api/v1/playback/${sid}/heartbeat`, { method: 'POST' });
+  if (r.ok) currentToken = (await r.json()).token;
+}, session.refresh_after * 1000);
+```
+
+`apps/player/src/Player.tsx` is the full reference; `docker/watch/index.html` is a smaller
+one in plain JavaScript.
+
+### The reference player UI
+
+`/` lists assets and plays them, handling sessions and heartbeat for you. It needs an API
+key pasted into its Connection panel, which makes it an **operator tool, not a viewer-facing
+page** — gate it (see [DEPLOY.md](../DEPLOY.md)) and send viewers `/watch` links.
 
 ---
 
@@ -226,75 +280,163 @@ Three independent clocks:
 
 **`DELIVERY_PRESIGN_TTL` must exceed the duration of your longest video.** Under
 `DELIVERY_STRATEGY=presigned` the media playlist is generated once, with a presigned URL
-per segment. A VOD playlist is not reloaded, so once those URLs expire, playback stops —
-partway through, with a 403 that looks like a server fault.
+per segment, and a VOD playlist is never reloaded. Once those URLs expire playback stops
+partway through, with a 403 that reads as a server fault.
 
 At the 600 s default, **anything longer than ten minutes dies around the ten-minute mark.**
-For interview-length content set it to match the session:
+For interview-length content, match it to the session:
 
 ```
 DELIVERY_PRESIGN_TTL=14400
 ```
 
+Check what a deployment is actually issuing:
+
+```bash
+M=$(./scripts/watch-url.sh --manifest $ID)
+V=$(curl -s "$M" | grep -m1 '^https')
+curl -s "$V" | grep -m1 '^https' | tr '&' '\n' | grep X-Amz-Expires
+```
+
 The tradeoff is mild: a leaked segment URL stays valid longer, but segments are AES-128
 ciphertext and useless without the content key, which stays session-gated and instantly
-revocable. You are extending the life of unreadable bytes, not of access.
+revocable. You extend the life of unreadable bytes, not of access.
 
 ---
 
-## 5. Revoking
+## 5. Sessions: inspecting and revoking
 
 ```bash
-curl -X DELETE "$OBSCURA_API/api/v1/playback/$SID" -H "Authorization: Bearer $OBSCURA_KEY"
-curl -X DELETE "$OBSCURA_API/api/v1/playback/sessions?subject_ref=user-42" \
-  -H "Authorization: Bearer $OBSCURA_KEY"     # everything for one person
+# who watched this asset, and when
+curl -s "$OBSCURA_API/api/v1/assets/$ID/access-log" \
+  -H "Authorization: Bearer $OBSCURA_KEY" | jq
+
+# kill one session
+curl -s -X DELETE "$OBSCURA_API/api/v1/playback/$SID" \
+  -H "Authorization: Bearer $OBSCURA_KEY" | jq
+
+# kill every session for one person - what you reach for when someone leaves
+curl -s -X DELETE "$OBSCURA_API/api/v1/playback/sessions?subject_ref=user-42" \
+  -H "Authorization: Bearer $OBSCURA_KEY" | jq
 ```
 
 Revocation bites at the key endpoint immediately, even while the token is still
 signature-valid. Under `presigned` delivery, already-issued segment URLs keep resolving
-until they expire — but they return ciphertext, and the key is gone.
+until they expire — but they return ciphertext and the key is gone.
+
+Watch time in the access log is **estimated** from heartbeat counts. Precise position
+tracking would be behavioural profiling of the person on camera, so it is deliberately
+not collected.
 
 A watch link is a **bearer credential**: whoever holds it can watch, under the original
-viewer's watermark, until it expires or is revoked. Mint one per viewer.
+viewer's watermark, until it expires or is revoked. Mint one per viewer — that is what
+makes the watermark and the access log mean anything.
 
 ---
 
 ## 6. Testing a deployment
 
-```bash
-curl "$OBSCURA_API/healthz"                                    # {"ok":true}
-curl "$OBSCURA_API/.well-known/obscura-integrity-keys.json"    # public verification key
-```
+A full pass, top to bottom. Every command here has been run against a live deployment.
 
-These must **fail**:
+### Setup
 
 ```bash
-curl -o /dev/null -w '%{http_code}\n' \
-  "https://<source-bucket>.s3.<region>.amazonaws.com/videos/$ID/source/original.mp4"   # 403
-curl -o /dev/null -w '%{http_code}\n' "$OBSCURA_API/api/v1/assets"                     # 401
+export OBSCURA_API=https://video.example.com
+export OBSCURA_KEY=obs_...
 ```
 
-Then walk the properties that matter:
+### Reachability
 
 ```bash
-# segments on the wire are ciphertext - no styp, no moof
-curl -s "<segment url from the variant playlist>" | xxd | head -2
-
-# the key endpoint returns exactly 16 bytes and is never cached
-curl -sI "<key uri>" | grep -i cache-control        # no-store
-
-# revocation is immediate
-curl -X DELETE "$OBSCURA_API/api/v1/playback/$SID" -H "Authorization: Bearer $OBSCURA_KEY"
-curl -o /dev/null -w '%{http_code}\n' "<key uri>"   # 401
-
-# every artifact matches the signed manifest
-obscura verify $ID
-
-# deletion is verified, and the proof outlives the asset
-obscura delete $ID --reason data_subject_request
-curl -s "$OBSCURA_API/api/v1/assets/$ID/deletion-record" -H "Authorization: Bearer $OBSCURA_KEY"
-curl -o /dev/null -w '%{http_code}\n' "$OBSCURA_API/api/v1/assets/$ID"    # 410
+curl -s "$OBSCURA_API/healthz"                                 # {"ok":true}
+curl -s "$OBSCURA_API/.well-known/obscura-integrity-keys.json" # the public verification key
+curl -sI "$OBSCURA_API" | grep -i strict-transport             # HSTS present
 ```
+
+### Nothing is exposed that should not be
+
+Each of these must fail:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' "$OBSCURA_API/api/v1/assets"          # 401
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://<source-bucket>.s3.<region>.amazonaws.com/"                          # 403
+
+for p in 3001 3002 5432 6379; do                                                # all refused
+  timeout 5 bash -c "echo > /dev/tcp/<instance-ip>/$p" 2>/dev/null \
+    && echo "$p OPEN - PROBLEM" || echo "$p refused"
+done
+```
+
+### Ingest and play
+
+```bash
+./scripts/list-assets.sh
+ID=$(./scripts/list-assets.sh --json | jq -r '.data[0].asset_id')
+./scripts/watch-url.sh "$ID"          # open it; it should play in any browser
+```
+
+### The security properties
+
+```bash
+# set up a session to poke at
+M=$(./scripts/watch-url.sh --manifest "$ID")
+SID=$(echo "$M" | sed -E 's#.*/stream/([^/]+)/.*#\1#')
+V=$(curl -s "$M" | grep -m1 '^https')
+KEY_URI=$(curl -s "$V" | grep -m1 'EXT-X-KEY' | sed -E 's/.*URI="([^"]+)".*/\1/')
+SEG=$(curl -s "$V" | grep -m1 '^https')
+
+# 1. the original is unreachable, with or without a link
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://<source-bucket>.s3.<region>.amazonaws.com/videos/$ID/source/original.mp4"
+#    expect 403
+
+# 2. no API response leaks the source object
+curl -s "$OBSCURA_API/api/v1/assets/$ID" -H "Authorization: Bearer $OBSCURA_KEY" \
+  | grep -iE 'original\.mp4|source_key|s3\.amazonaws'
+#    expect no matches - only source_sha256 is exposed
+
+# 3. segments on the wire are ciphertext
+curl -s "$SEG" | head -c 64 | xxd
+#    expect no 'styp', 'moof' or 'mdat'
+
+# 4. the key endpoint returns exactly 16 bytes and is never cached
+curl -s -o /dev/null -w '%{http_code} %{size_download} bytes\n' "$KEY_URI"   # 200 16 bytes
+curl -sI "$KEY_URI" | grep -i cache-control                                  # no-store
+
+# 5. revocation is immediate, while the token is still signature-valid
+curl -s -X DELETE "$OBSCURA_API/api/v1/playback/$SID" -H "Authorization: Bearer $OBSCURA_KEY"
+curl -s -o /dev/null -w '%{http_code}\n' "$KEY_URI"                          # 401
+
+# 6. every artifact matches the signed manifest
+obscura verify "$ID"
+
+# 7. the integrity manifest is signed and every rendition encrypted
+curl -s "$OBSCURA_API/api/v1/assets/$ID/integrity" -H "Authorization: Bearer $OBSCURA_KEY" \
+  | jq '{assetRoot, signature: .signature.algorithm,
+         renditions: [.renditions[] | {name, encryption: .encryption.method}]}'
+```
+
+### Verified deletion
+
+Destructive — use a throwaway asset:
+
+```bash
+curl -s -X DELETE "$OBSCURA_API/api/v1/assets/$ID" \
+  -H "Authorization: Bearer $OBSCURA_KEY" \
+  -H 'Content-Type: application/json' -d '{"reason":"data_subject_request"}'
+
+sleep 15
+
+curl -s "$OBSCURA_API/api/v1/assets/$ID/deletion-record" \
+  -H "Authorization: Bearer $OBSCURA_KEY" | jq
+#    storageVerifiedEmpty: true, contentKeysDestroyed: 1, and a signature
+
+curl -s -o /dev/null -w '%{http_code}\n' "$OBSCURA_API/api/v1/assets/$ID"    # 410
+```
+
+The deletion record outlives the asset. That is deliberate: erasing the proof of erasure
+would defeat its purpose, so `deletion_records` has no retention policy.
 
 ---
 
