@@ -233,6 +233,7 @@ packages/
 | [docs/integrity.md](docs/integrity.md) | Hashing, Merkle trees, signed provenance; what a hash does and does not prove |
 | [docs/data-model.md](docs/data-model.md) | PostgreSQL schema proposal |
 | [docs/api.md](docs/api.md) | REST API design |
+| [docs/feature-comparison.md](docs/feature-comparison.md) | Obscura vs Mux, Cloudflare Stream and Bunny — what each does and does not do |
 | [docs/scaling-and-cost.md](docs/scaling-and-cost.md) | Measured throughput, capacity per instance, cost vs Mux/Cloudflare/Bunny |
 | [docs/roadmap.md](docs/roadmap.md) | MVP definition and post-MVP phases |
 | [docs/testing.md](docs/testing.md) | Test strategy, fixture matrix, required tests |
