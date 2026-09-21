@@ -1,0 +1,102 @@
+# Production overlay for a single EC2 instance.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences from the development stack:
+#   - no MinIO: real S3, reached via the instance role (no access keys anywhere)
+#   - no ports published except through Caddy, which terminates TLS
+#   - NODE_ENV=production, so the services REFUSE TO START on placeholder secrets
+#   - client bootstrap disabled
+#   - presigned delivery, so video bytes go S3 -> browser and never touch the instance
+
+services:
+  minio:
+    profiles: ["donotstart"]
+  minio-init:
+    profiles: ["donotstart"]
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    ports: !override []
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    ports: !override []
+
+  api:
+    environment:
+      NODE_ENV: production
+      # Real S3: leave the endpoints unset so the AWS SDK resolves them, and use
+      # virtual-host style addressing.
+      S3_ENDPOINT: ""
+      S3_PUBLIC_ENDPOINT: ""
+      S3_FORCE_PATH_STYLE: "false"
+      DATABASE_URL: postgres://obscura:${POSTGRES_PASSWORD}@postgres:5432/obscura
+      REDIS_URL: redis://redis:6379
+      ALLOW_CLIENT_BOOTSTRAP: "false"
+      DELIVERY_STRATEGY: presigned
+    ports: !override []
+    depends_on: !override
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  edge:
+    environment:
+      NODE_ENV: production
+      S3_ENDPOINT: ""
+      S3_PUBLIC_ENDPOINT: ""
+      S3_FORCE_PATH_STYLE: "false"
+      DATABASE_URL: postgres://obscura:${POSTGRES_PASSWORD}@postgres:5432/obscura
+      REDIS_URL: redis://redis:6379
+      API_RUN_MIGRATIONS: "false"
+      # Video bytes go S3 -> browser. With `proxy` every byte would traverse this
+      # instance, which is the expensive option and does not scale.
+      DELIVERY_STRATEGY: presigned
+    ports: !override []
+    depends_on: !override
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    environment:
+      NODE_ENV: production
+      S3_ENDPOINT: ""
+      S3_PUBLIC_ENDPOINT: ""
+      S3_FORCE_PATH_STYLE: "false"
+      DATABASE_URL: postgres://obscura:${POSTGRES_PASSWORD}@postgres:5432/obscura
+      REDIS_URL: redis://redis:6379
+      WORKER_RUN_MIGRATIONS: "false"
+      DELIVERY_STRATEGY: presigned
+    depends_on: !override
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits:
+          # Transcoding will happily consume every core and starve the API. Leave headroom.
+          cpus: "${WORKER_CPUS:-2}"
+
+  player:
+    ports: !override []
+
+  # Terminates TLS and routes. Caddy obtains and renews certificates automatically.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+      EDGE_DOMAIN: ${EDGE_DOMAIN:-${DOMAIN}}
+    depends_on: [api, edge, player]
+
+volumes:
+  caddydata:
+  caddyconfig:

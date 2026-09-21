@@ -1,0 +1,46 @@
+# Caddy obtains and renews Let's Encrypt certificates automatically. TLS is not optional:
+# playback tokens travel in URLs, so plain HTTP would expose them to anything on the path.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Control plane. Reachable by YOUR BACKEND, not by end users. Restrict it at the
+	# security-group or firewall level too if your architecture allows.
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle /.well-known/obscura-integrity-keys.json {
+		reverse_proxy api:3001
+	}
+
+	# Data plane: session manifests, content keys, and (in proxy mode) segment bytes.
+	handle /stream/* {
+		reverse_proxy edge:3002
+	}
+
+	handle /healthz {
+		reverse_proxy api:3001
+	}
+
+	# Reference player. Delete this block if you are embedding Obscura in your own app.
+	handle {
+		reverse_proxy player:80
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Tokens live in query strings because native HLS cannot set request headers. Access
+	# logs would therefore capture them, so the request URI is not logged. Treat any log
+	# that does capture them as sensitive.
+	log {
+		output stdout
+		format json
+	}
+}
