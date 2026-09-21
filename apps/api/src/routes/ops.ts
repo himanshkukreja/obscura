@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { generateApiKey } from '@obscura/auth';
 import { uuidv7 } from '@obscura/shared';
+import { notFound } from '@obscura/shared';
+import { requireClient } from '../app.ts';
 import type { Deps } from '../deps.ts';
 
 export function registerOpsRoutes(app: FastifyInstance, deps: Deps): void {
@@ -38,6 +40,33 @@ export function registerOpsRoutes(app: FastifyInstance, deps: Deps): void {
     ];
     reply.header('Content-Type', 'text/plain; version=0.0.4');
     return lines.join('\n') + '\n';
+  });
+
+  /**
+   * Rotate the calling client's own API key.
+   *
+   * Authorized by the key it replaces, so it needs no bootstrap flag and no separate
+   * admin credential: whoever can still authenticate is entitled to a new secret. There
+   * was previously no way to do this at all - the only option was minting a new client,
+   * which orphans every asset the old one owned, since assets are scoped by client_id.
+   *
+   * The old key stops working the moment this returns. The new one is shown once.
+   */
+  app.post('/api/v1/clients/me/rotate', async (req, reply) => {
+    const client = await requireClient(deps, req);
+    const key = await generateApiKey();
+    const ok = await deps.repos.clients.rotateKey(client.id, key.prefix, key.hash);
+    if (!ok) throw notFound('Client no longer exists');
+
+    await deps.repos.audit.log({
+      actorType: 'api_client', actorId: client.id, action: 'client.key.rotated',
+      targetType: 'api_client', targetId: client.id,
+    });
+
+    // The only time the new secret is ever returned. It is not recoverable afterwards.
+    return reply.status(200).send({
+      client_id: client.id, name: client.name, api_key: key.full,
+    });
   });
 
   /**
