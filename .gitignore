@@ -1,0 +1,50 @@
+# ── secrets ─────────────────────────────────────────────────────────────────
+# .env holds the master key that wraps every content key. Committing it would make
+# every asset ever encrypted by this deployment readable by anyone with repo access.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!packages/**/*.key.ts
+secrets/
+credentials
+.aws/
+
+# ── build output ────────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# ── generated test media ────────────────────────────────────────────────────
+# The repository carries tests/fixtures/generate.sh, not binaries. Media is generated
+# on demand by ffmpeg so the history stays small and the fixtures stay reproducible.
+tests/fixtures/*.mp4
+tests/fixtures/*.mov
+tests/fixtures/*.mkv
+tests/fixtures/*.webm
+tests/fixtures/*.avi
+tests/fixtures/*.m4v
+tests/fixtures/*.m4a
+tests/fixtures/*.ts
+tests/fixtures/*.m4s
+tests/fixtures/*.m3u8
+
+# ── runtime scratch ─────────────────────────────────────────────────────────
+tmp/
+.tmp/
+*.log
+logs/
+coverage/
+.nyc_output/
+
+# ── editors / os ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~

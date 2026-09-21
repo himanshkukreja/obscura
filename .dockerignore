@@ -1,0 +1,19 @@
+# Never ship host build output into the image: a stale .tsbuildinfo makes `tsc --build`
+# consider everything up to date and skip emitting entirely.
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+.git
+.env
+docs
+tests/fixtures/*.mp4
+tests/fixtures/*.mov
+tests/fixtures/*.mkv
+tests/fixtures/*.webm
+tests/fixtures/*.m4a
+tmp
+.DS_Store

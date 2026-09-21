@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+*.sh      text eol=lf
+*.m3u8    text eol=lf
+Dockerfile* text eol=lf
+Caddyfile text eol=lf
+
+*.mp4 binary
+*.mov binary
+*.m4s binary
+*.png binary
+*.jpg binary
+
+# Keep generated lockfiles out of diffs and language stats.
+package-lock.json  linguist-generated=true -diff
+docs/**            linguist-documentation=true

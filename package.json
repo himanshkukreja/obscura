@@ -1,0 +1,34 @@
+{
+  "name": "obscura",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Private video delivery without handing out the original file",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean && rm -rf packages/*/dist apps/*/dist",
+    "typecheck": "tsc --build --force",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate": "node --experimental-strip-types packages/db/src/cli-migrate.ts",
+    "dev:api": "node --watch --experimental-strip-types apps/api/src/index.ts",
+    "dev:edge": "node --watch --experimental-strip-types apps/edge/src/index.ts",
+    "dev:worker": "node --watch --experimental-strip-types apps/worker/src/index.ts",
+    "fixtures": "bash tests/fixtures/generate.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/storage" },
+    { "path": "packages/media" },
+    { "path": "packages/encryption" },
+    { "path": "packages/integrity" },
+    { "path": "packages/db" },
+    { "path": "packages/auth" },
+    { "path": "packages/delivery" },
+    { "path": "apps/api" },
+    { "path": "apps/edge" },
+    { "path": "apps/worker" },
+    { "path": "apps/cli" }
+  ]
+}
