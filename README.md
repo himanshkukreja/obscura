@@ -227,6 +227,7 @@ packages/
 
 | Document | Contents |
 |---|---|
+| **[docs/usage.md](docs/usage.md)** | **Ingesting video and generating stream URLs — UI, CLI and API; timeouts; troubleshooting** |
 | [docs/architecture.md](docs/architecture.md) | Stack, components, request flows, pipeline, storage layout, deployment |
 | [docs/research.md](docs/research.md) | Open-source survey, standards research, license analysis |
 | [docs/security-model.md](docs/security-model.md) | Tokens, sessions, delivery authorization, CDN integration |
