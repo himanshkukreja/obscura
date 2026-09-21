@@ -1,0 +1,17 @@
+{
+  "name": "@obscura/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "dependencies": {
+    "@obscura/shared": "*",
+    "@obscura/storage": "*",
+    "@obscura/integrity": "*",
+    "@obscura/db": "*",
+    "@obscura/media": "*"
+  },
+  "bin": {
+    "obscura": "./dist/index.js"
+  }
+}

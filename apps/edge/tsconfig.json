@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src/**/*.ts"],
+  "references": [{"path":"../../packages/shared"},{"path":"../../packages/storage"},{"path":"../../packages/media"},{"path":"../../packages/encryption"},{"path":"../../packages/integrity"},{"path":"../../packages/db"},{"path":"../../packages/auth"},{"path":"../../packages/delivery"}]
+}
