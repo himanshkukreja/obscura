@@ -148,13 +148,65 @@ export const DEFAULT_LADDER: LadderConfig = {
    * high-motion content wants higher; screen capture and coding exercises want a
    * different profile entirely (static, text-heavy, legibility over fidelity).
    */
+  /**
+   * Quality target for rungs that do not set their own. 23 is the usual VOD default and
+   * is visually indistinguishable from a much larger fixed-bitrate encode on the footage
+   * this is built for. Raise it to shrink files further; 26 is still perfectly watchable
+   * for a talking head and roughly a third smaller again.
+   */
+  defaultCrf: 23,
+  /**
+   * Bitrates here are CEILINGS, not targets - the encoder is quality-targeted, so a
+   * static rung spends far less than its ceiling. Lower rungs get a slightly higher CRF
+   * because a smaller picture tolerates more compression at the same perceived quality.
+   */
   renditions: [
-    { name: '1080p', width: 1920, height: 1080, videoBitrate: '5000k' },
-    { name: '720p', width: 1280, height: 720, videoBitrate: '2800k' },
-    { name: '480p', width: 854, height: 480, videoBitrate: '1400k' },
-    { name: '360p', width: 640, height: 360, videoBitrate: '800k' },
+    { name: '1080p', width: 1920, height: 1080, videoBitrate: '5000k', crf: 23 },
+    { name: '720p', width: 1280, height: 720, videoBitrate: '2800k', crf: 23 },
+    { name: '480p', width: 854, height: 480, videoBitrate: '1400k', crf: 24 },
+    { name: '360p', width: 640, height: 360, videoBitrate: '800k', crf: 25 },
   ],
 };
+
+/**
+ * Read a ladder from the environment, falling back to the shipped default.
+ *
+ * The default is tuned for one profile (low-motion, face-and-voice) and says so, but
+ * until now changing it meant editing TypeScript and rebuilding - which made "fully
+ * configurable" untrue for anyone running a published image. OBSCURA_LADDER takes the
+ * same JSON shape as DEFAULT_LADDER; OBSCURA_LADDER_CRF overrides just the quality
+ * target, which is the knob most deployments actually want.
+ */
+export function loadLadder(): LadderConfig {
+  const raw = process.env['OBSCURA_LADDER'];
+  let ladder: LadderConfig = DEFAULT_LADDER;
+  if (raw) {
+    let parsed: Partial<LadderConfig>;
+    try {
+      parsed = JSON.parse(raw) as Partial<LadderConfig>;
+    } catch (e) {
+      throw new Error(`OBSCURA_LADDER is not valid JSON: ${(e as Error).message}`);
+    }
+    if (parsed.renditions && (!Array.isArray(parsed.renditions) || parsed.renditions.length === 0)) {
+      throw new Error('OBSCURA_LADDER.renditions must be a non-empty array');
+    }
+    ladder = { ...DEFAULT_LADDER, ...parsed };
+  }
+  const crfOverride = process.env['OBSCURA_LADDER_CRF'];
+  if (crfOverride) {
+    const crf = Number(crfOverride);
+    // x264 accepts 0-51. Outside that ffmpeg fails per rendition, long after upload.
+    if (!Number.isFinite(crf) || crf < 0 || crf > 51) {
+      throw new Error('OBSCURA_LADDER_CRF must be a number between 0 and 51');
+    }
+    ladder = {
+      ...ladder,
+      defaultCrf: crf,
+      renditions: ladder.renditions.map((r) => ({ ...r, crf })),
+    };
+  }
+  return ladder;
+}
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
   const nodeEnv = (process.env['NODE_ENV'] ?? 'development') as Config['env'];
@@ -237,7 +289,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       failedJobsDays: num('RETENTION_FAILED_JOBS_DAYS', 30),
     },
 
-    ladder: DEFAULT_LADDER,
+    ladder: loadLadder(),
     packaging: {
       segmentDurationSec: num('PACKAGING_SEGMENT_DURATION', 4),
       container: env('PACKAGING_CONTAINER', 'fmp4') as 'fmp4' | 'mpegts',

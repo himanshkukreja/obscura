@@ -56,13 +56,33 @@ export interface RenditionSpec {
   name: string;
   width: number;
   height: number;
+  /**
+   * Bitrate CEILING, not a target. The encoder is quality-targeted (see `crf`), so this
+   * caps peak bitrate for ABR switching rather than dictating how many bits every second
+   * of video gets. It is also what the master playlist advertises as BANDWIDTH.
+   */
   videoBitrate: string;
+  /**
+   * Constant Rate Factor: the quality the encoder aims for, spending only the bits that
+   * quality needs. Lower is better quality and larger. 18 is near-transparent, 23 is the
+   * usual VOD default, 28 is visibly soft.
+   *
+   * This exists because targeting a bitrate instead wastes most of it on the footage this
+   * is built for. Measured on a real 720p interview: capped CBR at 2800k produced 2956
+   * kbps at SSIM 0.9950, while CRF 23 produced 1010 kbps at SSIM 0.9879 - a third of the
+   * bytes for a difference no viewer can see on a talking head. High-motion content is
+   * the case that genuinely needs the bits, and it still gets them, because CRF spends
+   * more where the picture is harder.
+   */
+  crf?: number;
 }
 
 export interface LadderConfig {
   allowUpscaling: boolean;
   maxBitrateRatio: number;
   minRenditions: number;
+  /** Applied to any rendition that does not set its own. */
+  defaultCrf?: number;
   /** Constant across rungs: for conversational video the audio IS the content. */
   audioBitrate: string;
   renditions: RenditionSpec[];
@@ -73,8 +93,11 @@ export interface ResolvedRendition {
   name: string;
   width: number;
   height: number;
+  /** Peak ceiling, advertised as BANDWIDTH. See RenditionSpec.videoBitrate. */
   videoBitrate: string;
   audioBitrate: string;
+  /** Quality target. Absent means fall back to fixed-bitrate encoding. */
+  crf?: number;
 }
 
 // ── Packaging ───────────────────────────────────────────────────────────────

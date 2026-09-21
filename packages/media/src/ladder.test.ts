@@ -85,3 +85,42 @@ describe('selectLadder', () => {
     expect(l).toHaveLength(1);
   });
 });
+
+describe('quality target (CRF)', () => {
+  it('carries each rung its configured CRF', () => {
+    const l = selectLadder(p(1920, 1080, 8_000_000), DEFAULT_LADDER);
+    // Lower rungs get a higher CRF: a smaller picture tolerates more compression at the
+    // same perceived quality.
+    const byName = Object.fromEntries(l.map((r) => [r.name, r.crf]));
+    expect(byName['1080p']).toBe(23);
+    expect(byName['360p']).toBe(25);
+  });
+
+  it('falls back to defaultCrf when a rung does not set one', () => {
+    const cfg = {
+      ...DEFAULT_LADDER,
+      defaultCrf: 27,
+      renditions: [{ name: '720p', width: 1280, height: 720, videoBitrate: '2800k' }],
+    };
+    const l = selectLadder(p(1280, 720, 3_000_000), cfg);
+    expect(l[0]!.crf).toBe(27);
+  });
+
+  it('leaves crf undefined when neither is set, so encoding stays fixed-bitrate', () => {
+    const cfg = {
+      ...DEFAULT_LADDER,
+      defaultCrf: undefined,
+      renditions: [{ name: '720p', width: 1280, height: 720, videoBitrate: '2800k' }],
+    };
+    const l = selectLadder(p(1280, 720, 3_000_000), cfg);
+    expect(l[0]!.crf).toBeUndefined();
+  });
+
+  it('applies the quality target to the source-sized fallback rung too', () => {
+    // A source below every configured rung falls through to the "emit the lowest rung at
+    // the source's own size" path, which is easy to forget when adding a field.
+    const l = selectLadder(p(320, 180, 200_000), DEFAULT_LADDER);
+    expect(l).toHaveLength(1);
+    expect(l[0]!.crf).toBeDefined();
+  });
+});

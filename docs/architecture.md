@@ -231,11 +231,20 @@ asserts identical segment boundary PTS across renditions.
 
 ### Transcode decisions
 
+- **Encoding is quality-targeted, not bitrate-targeted.** Each rung carries a `crf` and
+  its `video_bitrate` acts as a ceiling. Targeting a bitrate spends the full allowance on
+  every second regardless of how hard the picture is, which on the low-motion footage this
+  is built for is most of it. Measured on a real 720p interview: capped CBR at 2800k gave
+  2956 kbps at SSIM 0.9950, CRF 23 gave 1010 kbps at SSIM 0.9879. A third of the bytes,
+  for a difference no viewer can see. High-motion content still gets the bits it needs,
+  because that is what CRF does.
 - **v1 always re-encodes.** Stream copy (`-c:v copy`) is tempting when the source already
   matches a rung, but it cannot guarantee the keyframe alignment above. Copy support is
   deferred until we can verify keyframe cadence from the probe and fall back safely.
-- **Audio is encoded once** at a single bitrate and shared across renditions where the
-  player supports a separate audio group; otherwise muxed identically into each rung.
+- **Audio is muxed identically into every rung** at a single bitrate. HLS supports a
+  separate audio rendition group that would store it once instead, and that is worth
+  doing - at 128k across three rungs roughly two thirds of the audio bytes are
+  duplication - but it is not implemented yet. Do not read this as done.
 - **HDR:** v1 detects HDR10/HLG from colour metadata and either tone-maps to BT.709 SDR
   or rejects the asset, per configuration. Passing HDR through untouched produces washed
   -out playback on SDR displays and is worse than either option.
@@ -319,7 +328,9 @@ Retention-driven deletion runs the identical job, differing only in the recorded
 
 ## 5. Adaptive bitrate ladder
 
-Fully configurable; the shipped default is a starting point, not a policy.
+Fully configurable through `OBSCURA_LADDER` (the whole ladder as JSON, merged over the
+default) or `OBSCURA_LADDER_CRF` (just the quality target, which is the knob most
+deployments want). The shipped default is a starting point, not a policy.
 
 ```yaml
 packaging:
