@@ -24,7 +24,19 @@
 	}
 
 	# Reference player. Delete this block if you are embedding Obscura in your own app.
+	#
+	# Gated behind HTTP basic auth: the player is the only route with no authentication
+	# of its own (/api carries a Bearer key, /stream carries a playback token), so
+	# without this the UI shell is world-readable. The credential is supplied by the
+	# environment rather than written here, so this file stays committable.
+	#
+	# Caddy fails to start if PLAYER_USER / PLAYER_PASSWORD_HASH are unset, which is the
+	# same "refuse to boot rather than run open" stance NODE_ENV=production takes on
+	# placeholder secrets. Generate a hash with:  caddy hash-password
 	handle {
+		basic_auth {
+			{$PLAYER_USER} {$PLAYER_PASSWORD_HASH}
+		}
 		reverse_proxy player:80
 	}
 

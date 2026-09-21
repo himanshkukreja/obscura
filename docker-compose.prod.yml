@@ -92,6 +92,9 @@ services:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
       - caddyconfig:/config
+    # env_file, not `environment:`, for the basic-auth credential: a bcrypt hash is full
+    # of `$` and compose would try to interpolate it. env_file values are passed verbatim.
+    env_file: [.env]
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN}
       EDGE_DOMAIN: ${EDGE_DOMAIN:-${DOMAIN}}
