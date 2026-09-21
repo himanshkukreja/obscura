@@ -96,6 +96,34 @@ guarantee, and cryptographic erasure only covers what Obscura encrypted.
 
 ---
 
+## 2b. Finding an asset
+
+```bash
+./scripts/list-assets.sh                 # id, status, duration, size, title
+./scripts/list-assets.sh --status FAILED # just the ones that went wrong
+./scripts/list-assets.sh --limit 100
+./scripts/list-assets.sh --json | jq -r '.data[].asset_id'
+```
+
+The CLI has `status` and `inspect` for a single asset but no way to enumerate, which is
+what you want when you are hunting for an id to play or delete. The two scripts compose:
+
+```bash
+./scripts/watch-url.sh "$(./scripts/list-assets.sh --json | jq -r '.data[0].asset_id')"
+```
+
+Or skip the id entirely — `watch-url.sh` accepts a fragment of a title or filename and
+resolves it, erroring rather than guessing when a fragment matches more than one asset.
+
+```bash
+./scripts/watch-url.sh "Interview 4821"
+```
+
+The raw endpoint is `GET /api/v1/assets?limit=N`, cursor-paginated via `next_cursor`. It
+deliberately returns no `source_key`, `source_bucket`, or any URL to the original.
+
+---
+
 ## 3. Getting a playable URL out
 
 ### The short version
