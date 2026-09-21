@@ -76,8 +76,17 @@ export async function packageRendition(
     '-c:v', 'libx264',
     '-profile:v', 'main',
     '-preset', 'veryfast',
-    '-b:v', r.videoBitrate,
-    '-maxrate', r.videoBitrate,
+    // Quality-targeted when a CRF is configured, with videoBitrate acting as a ceiling
+    // rather than a target. Fixed-bitrate encoding spends the full allowance on every
+    // second regardless of how hard the picture is, which on low-motion footage is most
+    // of it: measured on a real 720p interview, capped CBR at 2800k produced 2956 kbps
+    // at SSIM 0.9950 while CRF 23 produced 1010 kbps at SSIM 0.9879.
+    //
+    // The ceiling still matters. It bounds peak bitrate so ABR switching stays
+    // predictable and the BANDWIDTH the master playlist advertises stays honest.
+    ...(r.crf !== undefined
+      ? ['-crf', String(r.crf), '-maxrate', r.videoBitrate]
+      : ['-b:v', r.videoBitrate, '-maxrate', r.videoBitrate]),
     '-bufsize', `${Math.round(parseInt(r.videoBitrate) * 2)}k`,
     // ── keyframe alignment: all three of these matter ──
     '-force_key_frames', `expr:gte(t,n_forced*${seg})`,

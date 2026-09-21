@@ -66,6 +66,7 @@ export function selectLadder(probe: ProbeResult, cfg: LadderConfig): ResolvedRen
       height: dims.height,
       videoBitrate: formatBitrate(bitrate),
       audioBitrate: cfg.audioBitrate,
+      crf: r.crf ?? cfg.defaultCrf,
     });
     void i;
   }
@@ -90,6 +91,7 @@ export function selectLadder(probe: ProbeResult, cfg: LadderConfig): ResolvedRen
     height: Math.max(2, even(srcH)),
     videoBitrate: formatBitrate(Math.min(parseBitrate(lowest.videoBitrate), cap)),
     audioBitrate: cfg.audioBitrate,
+    crf: lowest.crf ?? cfg.defaultCrf,
   }];
 }
 
