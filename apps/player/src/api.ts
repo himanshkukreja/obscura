@@ -73,12 +73,26 @@ export const deleteAsset = (id: string) =>
   });
 
 export const getIntegrity = (id: string) =>
-  call<{ assetRoot: string; signature: { keyId: string }; renditions: { name: string; segmentCount: number }[] }>(
-    `/assets/${id}/integrity`);
+  call<{
+    assetRoot: string;
+    createdAt: string;
+    pipeline: { version: string; ffmpeg: string };
+    source: { sha256: string; size: number; contentType: string | null };
+    signature: { algorithm: string; keyId: string };
+    renditions: {
+      name: string; width: number; height: number; segmentCount: number;
+      encryption: { method: string; kid: string | null };
+    }[];
+  }>(`/assets/${id}/integrity`);
 
 export const getAccessLog = (id: string) =>
-  call<{ data: { subject_ref: string; started_at: string; events: Record<string, number> }[] }>(
-    `/assets/${id}/access-log`);
+  call<{
+    data: {
+      session_id: string; subject_ref: string; started_at: string;
+      last_seen_at: string | null; revoked_at: string | null;
+      events: Record<string, number>; watched_seconds_estimate: number;
+    }[];
+  }>(`/assets/${id}/access-log`);
 
 /** XHR rather than fetch, because fetch gives no upload progress. */
 export function upload(

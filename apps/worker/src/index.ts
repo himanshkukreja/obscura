@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises';
-import { AssetStatus, ObscuraError, ErrorCodes } from '@obscura/shared';
+import { AssetStatus, ObscuraError, ErrorCodes, queueJobId } from '@obscura/shared';
 import { ensurePartitions, enforceRetention, migrate } from '@obscura/db';
 import { createContext } from './context.ts';
 import { createQueue, createWorker, defaultJobOptions, type Job, type JobPayload } from './queue.ts';
@@ -52,7 +52,30 @@ async function handle(job: Job<JobPayload>): Promise<void> {
       case 'retention': {
         const r = await enforceRetention(ctx.db, ctx.cfg.retention);
         await ensurePartitions(ctx.db);
-        log.info(r, 'retention enforced');
+
+        // Expire media that has outlived its retention. `dueForRetention` has always
+        // existed - along with the expires_at column and its index - but nothing ever
+        // called it, so assets with a TTL simply never expired.
+        //
+        // This enqueues the ordinary delete job rather than removing objects directly.
+        // That matters: deletion revokes live sessions, destroys the content key so any
+        // surviving copy is permanently unreadable, re-lists storage to confirm it is
+        // empty, and signs a record. A storage lifecycle rule would delete the bytes
+        // while leaving the asset READY and its key alive - the system would be lying
+        // about its own state.
+        const expired = await ctx.repos.assets.dueForRetention();
+        for (const assetId of expired) {
+          await queue.add(
+            'delete',
+            { type: 'delete', assetId, reason: 'retention', requestedBy: null },
+            { ...defaultJobOptions, jobId: queueJobId(`${assetId}:delete:retention`) },
+          );
+        }
+        if (expired.length) {
+          log.info({ count: expired.length }, 'queued expired assets for verified deletion');
+        }
+
+        log.info({ ...r, assetsExpired: expired.length }, 'retention enforced');
         return;
       }
     }

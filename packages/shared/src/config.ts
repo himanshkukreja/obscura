@@ -74,6 +74,13 @@ export interface Config {
     sessionEventsDays: number;
     auditLogDays: number;
     failedJobsDays: number;
+    /**
+     * Applied to assets created without an explicit `ttl_days`. Null keeps media
+     * forever, which is the wrong default for personal-data video but the only safe
+     * one to ship: silently deleting somebody's recordings because they did not set a
+     * variable would be worse than keeping them.
+     */
+    assetDefaultTtlDays: number | null;
   };
 
   ladder: LadderConfig;
@@ -287,6 +294,9 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       sessionEventsDays: num('RETENTION_EVENTS_DAYS', 30),
       auditLogDays: num('RETENTION_AUDIT_DAYS', 365),
       failedJobsDays: num('RETENTION_FAILED_JOBS_DAYS', 30),
+      assetDefaultTtlDays: process.env['RETENTION_ASSET_DEFAULT_TTL_DAYS']
+        ? num('RETENTION_ASSET_DEFAULT_TTL_DAYS', 0)
+        : null,
     },
 
     ladder: loadLadder(),

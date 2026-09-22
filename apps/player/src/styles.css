@@ -158,3 +158,34 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--line
   td.actions { text-align: left; }
   th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4) { display: none; }
 }
+
+/* ── asset detail ───────────────────────────────────────────────────────────
+   Replaces a JSON dump. The things an operator actually needs when looking at a
+   recording are: can I prove what this is, when does it disappear, what was
+   produced, and who has watched it. Four sections, in that order. */
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem 1.6rem; padding: 0.3rem 0.45rem 0.9rem; }
+.detail-grid section.wide { grid-column: 1 / -1; }
+.detail-grid h4 { margin: 0 0 0.5rem; font-size: 0.72rem; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.9rem; margin: 0; font-size: 0.85rem; }
+.kv dt { color: var(--muted); white-space: nowrap; }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* A full SHA-256 is unreadable inline and rarely wanted in full; the ends are enough
+   to compare by eye, and the whole value is one click away. */
+.hashchip { background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  color: var(--text); font: inherit; }
+.hashchip code { background: var(--card-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.08rem 0.4rem; font-size: 0.8rem; }
+.hashchip:hover code { border-color: var(--accent); color: var(--accent); }
+
+table.mini { font-size: 0.83rem; }
+table.mini th { padding: 0 0.4rem 0.35rem; }
+table.mini td { padding: 0.35rem 0.4rem; }
+.detail-grid .ok { color: var(--ok); }
+.detail-grid .warn { color: var(--warn); }
+.pill.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+
+@media (max-width: 640px) { .detail-grid { grid-template-columns: 1fr; } }

@@ -12,6 +12,22 @@ export interface ApiClientRow {
 export class ApiClientRepository {
   constructor(private readonly db: Db) {}
 
+  /**
+   * Replace a client's key without changing its identity.
+   *
+   * Assets, sessions and audit rows are all scoped by client_id, so rotating by creating
+   * a NEW client orphans everything the old one owned - its assets vanish from listings
+   * and its access log points at a client that no longer exists. Rotating in place is the
+   * only safe way to replace a credential.
+   */
+  async rotateKey(id: string, keyPrefix: string, keyHash: string): Promise<boolean> {
+    const { rowCount } = await this.db.query(
+      'UPDATE api_clients SET key_prefix = $2, key_hash = $3 WHERE id = $1',
+      [id, keyPrefix, keyHash],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
   async create(c: { id: string; name: string; keyPrefix: string; keyHash: string; scopes: string[] }) {
     const { rows } = await this.db.query<ApiClientRow>(
       `INSERT INTO api_clients (id, name, key_prefix, key_hash, scopes)

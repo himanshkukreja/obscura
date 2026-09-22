@@ -215,29 +215,142 @@ export function App() {
   );
 }
 
+type Integrity = Awaited<ReturnType<typeof getIntegrity>>;
+type AccessLog = Awaited<ReturnType<typeof getAccessLog>>;
+
+const bytes = (n: number | null | undefined) => {
+  if (!n) return '—';
+  const u = ['B', 'KB', 'MB', 'GB']; let v = n, i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${u[i]}`;
+};
+const when = (t: string | null | undefined) => (t ? new Date(t).toLocaleString() : '—');
+const secs = (n: number) => (n < 60 ? `${n}s` : `${Math.floor(n / 60)}m ${n % 60}s`);
+
+/** Long hex is unreadable inline and rarely needed in full - show the ends, copy the whole. */
+function Hash({ value, label }: { value: string | null; label: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return <span className="muted">—</span>;
+  return (
+    <button
+      type="button"
+      className="hashchip"
+      title={`${label}: ${value} (click to copy)`}
+      onClick={() => {
+        void navigator.clipboard?.writeText(value).then(() => {
+          setCopied(true); setTimeout(() => setCopied(false), 1200);
+        });
+      }}
+    >
+      <code>{copied ? 'copied' : `${value.slice(0, 10)}…${value.slice(-6)}`}</code>
+    </button>
+  );
+}
+
+function Detail({ asset: a, integ, log, failed }: {
+  asset: AssetSummary; integ: Integrity | null; log: AccessLog | null; failed: boolean;
+}) {
+  if (failed) return <p className="muted">Details are unavailable for this asset.</p>;
+  if (!integ && !log) return <p className="muted">Loading…</p>;
+  const viewers = log?.data ?? [];
+  return (
+    <div className="detail-grid">
+      <section>
+        <h4>Provenance</h4>
+        {/* The point of the integrity manifest is that it is checkable, so show what was
+            signed and by which key rather than asserting "verified". */}
+        <dl className="kv">
+          <dt>Source SHA-256</dt><dd><Hash value={integ?.source.sha256 ?? a.source_sha256} label="Source SHA-256" /></dd>
+          <dt>Asset root</dt><dd><Hash value={integ?.assetRoot ?? a.asset_root} label="Merkle root" /></dd>
+          <dt>Signature</dt>
+          <dd>{integ?.signature
+            ? <>{integ.signature.algorithm} <span className="muted">· {integ.signature.keyId}</span></>
+            : <span className="muted">unsigned</span>}</dd>
+          <dt>Pipeline</dt>
+          <dd>{integ ? <>v{integ.pipeline.version} <span className="muted">· ffmpeg {integ.pipeline.ffmpeg}</span></> : '—'}</dd>
+          <dt>Original</dt>
+          <dd>{bytes(integ?.source.size ?? a.size)} <span className="muted">{integ?.source.contentType ?? a.content_type ?? ''}</span></dd>
+        </dl>
+      </section>
+
+      <section>
+        <h4>Lifecycle</h4>
+        <dl className="kv">
+          <dt>Created</dt><dd>{when(a.created_at)}</dd>
+          <dt>Ready</dt><dd>{when(a.ready_at)}</dd>
+          <dt>Expires</dt>
+          <dd>{a.expires_at
+            ? when(a.expires_at)
+            : <span className="muted">never — retained until deleted</span>}</dd>
+        </dl>
+      </section>
+
+      <section className="wide">
+        <h4>Renditions</h4>
+        {integ?.renditions.length ? (
+          <table className="mini">
+            <thead><tr><th>Rung</th><th>Resolution</th><th>Segments</th><th>Encryption</th></tr></thead>
+            <tbody>
+              {integ.renditions.map((r) => (
+                <tr key={r.name}>
+                  <td>{r.name}</td>
+                  <td className="muted">{r.width}×{r.height}</td>
+                  <td className="muted">{r.segmentCount}</td>
+                  <td>{r.encryption.method === 'NONE'
+                    ? <span className="warn">not encrypted</span>
+                    : <span className="ok">{r.encryption.method}</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="muted">No renditions yet.</p>}
+      </section>
+
+      <section className="wide">
+        <h4>Who watched <span className="muted">({viewers.length})</span></h4>
+        {viewers.length ? (
+          <table className="mini">
+            <thead><tr><th>Viewer</th><th>Started</th><th>Watched</th><th>Keys</th><th /></tr></thead>
+            <tbody>
+              {viewers.map((v) => (
+                <tr key={v.session_id}>
+                  <td>{v.subject_ref}</td>
+                  <td className="muted">{when(v.started_at)}</td>
+                  {/* Estimated from heartbeats: precise position tracking would be
+                      behavioural profiling of the person on camera. */}
+                  <td className="muted" title="Estimated from heartbeats">~{secs(v.watched_seconds_estimate)}</td>
+                  <td className="muted">{v.events?.['key'] ?? 0}</td>
+                  <td>{v.revoked_at ? <span className="pill danger">revoked</span> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="muted">Nobody has opened this recording.</p>}
+      </section>
+    </div>
+  );
+}
+
 function Row({ asset: a, onPlay, onDelete, onInspect, expanded }: {
   asset: AssetSummary; onPlay: () => void; onDelete: () => void; onInspect: () => void; expanded: boolean;
 }) {
-  const [detail, setDetail] = useState<string | null>(null);
+  const [integ, setInteg] = useState<Integrity | null>(null);
+  const [log, setLog] = useState<AccessLog | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!expanded) return;
     void (async () => {
-      try {
-        const [integ, log] = await Promise.all([
-          getIntegrity(a.asset_id).catch(() => null),
-          getAccessLog(a.asset_id).catch(() => null),
-        ]);
-        setDetail(JSON.stringify({
-          source_sha256: a.source_sha256,
-          asset_root: integ?.assetRoot ?? null,
-          signed_by: integ?.signature.keyId ?? null,
-          renditions: integ?.renditions.map((r) => `${r.name} (${r.segmentCount} segments)`) ?? [],
-          viewers: log?.data.map((v) => `${v.subject_ref} — ${new Date(v.started_at).toLocaleString()}`) ?? [],
-        }, null, 2));
-      } catch { setDetail('unavailable'); }
+      const [i, l] = await Promise.all([
+        getIntegrity(a.asset_id).catch(() => null),
+        getAccessLog(a.asset_id).catch(() => null),
+      ]);
+      setInteg(i); setLog(l);
+      // Only a genuine failure when neither call returned; an asset that is still
+      // processing legitimately has no integrity manifest yet.
+      setFailed(!i && !l);
     })();
-  }, [expanded, a.asset_id, a.source_sha256]);
+  }, [expanded, a.asset_id]);
 
   return (
     <>
@@ -254,7 +367,7 @@ function Row({ asset: a, onPlay, onDelete, onInspect, expanded }: {
       </tr>
       {expanded && (
         <tr className="detail">
-          <td colSpan={5}><pre>{detail ?? 'loading…'}</pre></td>
+          <td colSpan={5}><Detail asset={a} integ={integ} log={log} failed={failed} /></td>
         </tr>
       )}
     </>

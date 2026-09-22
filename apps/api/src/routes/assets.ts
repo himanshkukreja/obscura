@@ -9,6 +9,11 @@ import type { Deps } from '../deps.ts';
 
 const SAFE_EXT = /^\.[A-Za-z0-9]{1,5}$/;
 
+function expiryFor(ttlDays: number | undefined, defaultDays: number | null): Date | null {
+  const days = ttlDays ?? defaultDays;
+  return days ? new Date(Date.now() + days * 86_400_000) : null;
+}
+
 export function registerAssetRoutes(app: FastifyInstance, deps: Deps): void {
   // ── create: returns a narrowly scoped, short-lived upload target ──
   app.post('/api/v1/assets', {
@@ -55,7 +60,10 @@ export function registerAssetRoutes(app: FastifyInstance, deps: Deps): void {
       sourceKey,
       sourceSize: b.size ?? null,
       deliveryBucket: deps.cfg.storage.deliveryBucket,
-      expiresAt: b.ttl_days ? new Date(Date.now() + b.ttl_days * 86_400_000) : null,
+      // An explicit ttl_days always wins; otherwise fall back to the deployment default
+      // so retention is a property of the install rather than something every caller has
+      // to remember to ask for.
+      expiresAt: expiryFor(b.ttl_days, deps.cfg.retention.assetDefaultTtlDays),
     }).catch((e: unknown) => {
       if ((e as { code?: string }).code === '23505') {
         throw conflict('An asset with this external_ref already exists', {
