@@ -54,7 +54,7 @@ describe('parseCorsOrigins', () => {
   });
 
   it('matches any subdomain depth, because deployments nest them', () => {
-    const [re] = parseCorsOrigins('https://*.senseloaf.ai') as RegExp[];
+    const re = parseCorsOrigins('https://*.senseloaf.ai')[0] as RegExp;
     expect(re).toBeInstanceOf(RegExp);
     expect(re.test('https://obscura.senseloaf.ai')).toBe(true);
     expect(re.test('https://sia.senseloaf.ai')).toBe(true);
@@ -63,7 +63,7 @@ describe('parseCorsOrigins', () => {
   });
 
   it('does not let the wildcard escape the domain', () => {
-    const [re] = parseCorsOrigins('https://*.senseloaf.ai') as RegExp[];
+    const re = parseCorsOrigins('https://*.senseloaf.ai')[0] as RegExp;
     // The dot is escaped and `*` excludes dots, so none of these may pass.
     expect(re.test('https://evil.com')).toBe(false);
     expect(re.test('https://senseloaf.ai.evil.com')).toBe(false);
@@ -74,7 +74,7 @@ describe('parseCorsOrigins', () => {
   });
 
   it('anchors, so a prefix or suffix cannot sneak through', () => {
-    const [re] = parseCorsOrigins('https://*.senseloaf.ai') as RegExp[];
+    const re = parseCorsOrigins('https://*.senseloaf.ai')[0] as RegExp;
     expect(re.test('https://app.senseloaf.ai.attacker.test')).toBe(false);
     expect(re.test('xhttps://app.senseloaf.ai')).toBe(false);
   });
