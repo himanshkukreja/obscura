@@ -25,6 +25,14 @@ export async function buildApp(deps: Deps): Promise<FastifyInstance> {
    * default parser rejects that outright, which turns a perfectly ordinary request into a
    * 500. Treat an empty body as `{}` and let per-route schemas decide what is required.
    */
+  // Brand-logo upload sends raw PNG bytes. Without this Fastify tries to JSON-parse them
+  // and the request fails before the route is reached.
+  app.addContentTypeParser(
+    ['image/png', 'application/octet-stream'],
+    { parseAs: 'buffer' },
+    (_req, body, done) => done(null, body),
+  );
+
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
     const text = (body as string).trim();
     if (text === '') return done(null, {});

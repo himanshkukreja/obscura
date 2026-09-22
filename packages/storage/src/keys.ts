@@ -3,6 +3,8 @@
  * job's prefix enumeration cannot drift from what the pipeline writes.
  */
 export const StorageKeys = {
+  /** Tenant brand mark. Outside videos/ so an asset purge never touches it. */
+  brandingLogo: (clientId: string) => `branding/${clientId}/logo.png`,
   assetPrefix: (assetId: string) => `videos/${assetId}/`,
   sourcePrefix: (assetId: string) => `videos/${assetId}/source/`,
   source: (assetId: string, ext: string) => `videos/${assetId}/source/original${ext}`,

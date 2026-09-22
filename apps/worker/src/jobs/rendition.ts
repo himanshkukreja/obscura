@@ -1,4 +1,4 @@
-import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, stat, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { join, basename } from 'node:path';
@@ -70,6 +70,26 @@ export async function runRendition(
       { assetId, kid: keyRow.kid },
     );
 
+    // Fetch the brand mark this asset was ingested with — not whatever the tenant has
+    // configured now. An asset re-encoded after a rebrand must still carry the mark its
+    // integrity record attests to.
+    let branding: { logoPath: string; position: string; opacity: number; heightPct: number } | undefined;
+    if (asset.branding) {
+      const logoPath = join(work, 'brand-logo.png');
+      const logo = await ctx.storage.get(
+        asset.delivery_bucket!, StorageKeys.brandingLogo(asset.client_id),
+      );
+      const chunks: Buffer[] = [];
+      for await (const c of logo.body) chunks.push(c as Buffer);
+      await writeFile(logoPath, Buffer.concat(chunks));
+      branding = {
+        logoPath,
+        position: asset.branding.position,
+        opacity: asset.branding.opacity,
+        heightPct: asset.branding.heightPct,
+      };
+    }
+
     // ffmpeg packages UNENCRYPTED: its HLS muxer cannot encrypt fMP4 at all. We apply
     // AES-128 ourselves below, which also keeps key material entirely off disk.
     const result = await packageRendition({
@@ -79,6 +99,7 @@ export async function runRendition(
       rendition: spec,
       probe: asset.probe,
       packaging: ctx.cfg.packaging,
+      branding,
       onProgress,
     });
 

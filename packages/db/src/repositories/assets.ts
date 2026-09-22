@@ -1,5 +1,5 @@
 import type { Db } from '../pool.ts';
-import { AssetStatus, type ProbeResult, type ResolvedRendition } from '@obscura/shared';
+import { AssetStatus, type AppliedBranding, type ProbeResult, type ResolvedRendition } from '@obscura/shared';
 
 export interface AssetRow {
   id: string;
@@ -30,6 +30,7 @@ export interface AssetRow {
   integrity_signature: string | null;
   integrity_key_id: string | null;
   expires_at: Date | null;
+  branding: AppliedBranding | null;
   created_at: Date;
   updated_at: Date;
   ready_at: Date | null;
@@ -142,6 +143,11 @@ export class AssetRepository {
          user_agent_hash = NULL WHERE asset_id = $1`,
       [id],
     );
+  }
+
+  async setBranding(id: string, branding: AppliedBranding): Promise<void> {
+    await this.db.query('UPDATE assets SET branding = $2 WHERE id = $1',
+      [id, JSON.stringify(branding)]);
   }
 
   async dueForRetention(now = new Date()): Promise<string[]> {
