@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { loadLadder, DEFAULT_LADDER } from './config.ts';
+import { loadLadder, DEFAULT_LADDER, parseCorsOrigins } from './config.ts';
 
 const clear = () => {
   delete process.env['OBSCURA_LADDER'];
@@ -44,5 +44,45 @@ describe('loadLadder', () => {
   it.each(['-1', '52', 'abc'])('rejects out-of-range CRF %s at boot, not mid-transcode', (v) => {
     process.env['OBSCURA_LADDER_CRF'] = v;
     expect(() => loadLadder()).toThrow(/between 0 and 51/);
+  });
+});
+
+describe('parseCorsOrigins', () => {
+  it('leaves exact origins as strings', () => {
+    expect(parseCorsOrigins('https://a.example.com,https://b.example.com'))
+      .toEqual(['https://a.example.com', 'https://b.example.com']);
+  });
+
+  it('matches any subdomain depth, because deployments nest them', () => {
+    const re = parseCorsOrigins('https://*.senseloaf.ai')[0] as RegExp;
+    expect(re).toBeInstanceOf(RegExp);
+    expect(re.test('https://obscura.senseloaf.ai')).toBe(true);
+    expect(re.test('https://sia.senseloaf.ai')).toBe(true);
+    expect(re.test('https://dev.sia.senseloaf.ai')).toBe(true);    // two labels
+    expect(re.test('https://a.b.c.senseloaf.ai')).toBe(true);
+  });
+
+  it('does not let the wildcard escape the domain', () => {
+    const re = parseCorsOrigins('https://*.senseloaf.ai')[0] as RegExp;
+    // The dot is escaped and `*` excludes dots, so none of these may pass.
+    expect(re.test('https://evil.com')).toBe(false);
+    expect(re.test('https://senseloaf.ai.evil.com')).toBe(false);
+    expect(re.test('https://notsenseloaf.ai')).toBe(false);
+    expect(re.test('https://evil-senseloaf.ai')).toBe(false);
+    expect(re.test('https://x.senseloafXai')).toBe(false);
+    expect(re.test('http://app.senseloaf.ai')).toBe(false);        // scheme differs
+  });
+
+  it('anchors, so a prefix or suffix cannot sneak through', () => {
+    const re = parseCorsOrigins('https://*.senseloaf.ai')[0] as RegExp;
+    expect(re.test('https://app.senseloaf.ai.attacker.test')).toBe(false);
+    expect(re.test('xhttps://app.senseloaf.ai')).toBe(false);
+  });
+
+  it('mixes exact and wildcard entries, and ignores blanks', () => {
+    const out = parseCorsOrigins('https://exact.example.com, ,https://*.senseloaf.ai');
+    expect(out).toHaveLength(2);
+    expect(typeof out[0]).toBe('string');
+    expect(out[1]).toBeInstanceOf(RegExp);
   });
 });
