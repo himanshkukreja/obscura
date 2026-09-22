@@ -82,6 +82,23 @@ export async function runProcess(ctx: Ctx, queue: Queue<JobPayload>, assetId: st
       });
     }
 
+    // Snapshot the tenant's brand mark onto the asset NOW. Branding can change later; an
+    // asset must keep a record of what it was actually encoded with, or "which logo is on
+    // this recording" becomes unanswerable after a rebrand.
+    const branding = await ctx.repos.clients.getBranding(asset.client_id);
+    if (branding) {
+      await ctx.repos.assets.setBranding(assetId, {
+        logoSha256: branding.logoSha256,
+        position: branding.position,
+        opacity: branding.opacity,
+        heightPct: branding.heightPct,
+      });
+      ctx.log.info(
+        { assetId, logoSha256: branding.logoSha256.slice(0, 12) },
+        'brand mark will be burned into this asset',
+      );
+    }
+
     await ctx.repos.assets.setStatus(assetId, AssetStatus.PROCESSING);
 
     // Renditions are independent and idempotent, so a failure costs only the failed rung.

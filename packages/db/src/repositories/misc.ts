@@ -1,3 +1,4 @@
+import type { BrandingPolicy } from '@obscura/shared';
 import type { Db } from '../pool.ts';
 import type { AssetStatus, DeletionRecord, ResolvedRendition } from '@obscura/shared';
 
@@ -20,6 +21,29 @@ export class ApiClientRepository {
    * and its access log points at a client that no longer exists. Rotating in place is the
    * only safe way to replace a credential.
    */
+  /**
+   * The tenant's brand mark, or null. Lives in the existing `policy` jsonb rather than its
+   * own columns so adding more per-tenant settings later needs no migration.
+   */
+  async getBranding(id: string): Promise<BrandingPolicy | null> {
+    const { rows } = await this.db.query<{ policy: { branding?: BrandingPolicy } }>(
+      'SELECT policy FROM api_clients WHERE id = $1', [id],
+    );
+    return rows[0]?.policy?.branding ?? null;
+  }
+
+  async setBranding(id: string, branding: BrandingPolicy | null): Promise<void> {
+    // jsonb_set would fail on a null policy, and '-' removes the key when clearing.
+    await this.db.query(
+      branding
+        ? `UPDATE api_clients
+              SET policy = coalesce(policy, '{}'::jsonb) || jsonb_build_object('branding', $2::jsonb)
+            WHERE id = $1`
+        : `UPDATE api_clients SET policy = coalesce(policy, '{}'::jsonb) - 'branding' WHERE id = $1`,
+      branding ? [id, JSON.stringify(branding)] : [id],
+    );
+  }
+
   async rotateKey(id: string, keyPrefix: string, keyHash: string): Promise<boolean> {
     const { rowCount } = await this.db.query(
       'UPDATE api_clients SET key_prefix = $2, key_hash = $3 WHERE id = $1',

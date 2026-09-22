@@ -5,6 +5,16 @@ import { run } from './exec.ts';
 import { declaredBandwidth } from './ladder.ts';
 
 export interface PackageRenditionOptions {
+  /**
+   * Tenant brand mark to burn in, already downloaded to a local path. Absent means no
+   * logo, and the encode is byte-for-byte what it was before this existed.
+   */
+  branding?: {
+    logoPath: string;
+    position: string;
+    opacity: number;
+    heightPct: number;
+  };
   ffmpegPath: string;
   input: string;
   outDir: string;
@@ -40,10 +50,48 @@ export interface PackageRenditionResult {
  * Drop any one of the three and the stream plays fine in casual testing, then stutters on
  * quality switches in production. tests/ asserts identical segment boundaries across rungs.
  */
+/**
+ * Compose the scale/format chain with a logo overlay.
+ *
+ * The logo is scaled relative to THIS rung's height rather than given a fixed pixel size,
+ * so it occupies the same proportion of the frame at 1080p and at 360p. A fixed size would
+ * be a discreet mark on the top rung and cover a third of the bottom one.
+ *
+ * `format=rgba` before colorchannelmixer is deliberate: the filter multiplies the alpha
+ * channel, so the logo needs one. Without it a transparent PNG loses its transparency and
+ * arrives as a white box.
+ */
+export function brandFilter(
+  base: string[],
+  branding: { position: string; opacity: number; heightPct: number },
+  renditionHeight: number,
+): string {
+  const logoH = Math.max(8, Math.round((renditionHeight * branding.heightPct) / 100));
+  const pad = Math.max(6, Math.round(renditionHeight * 0.02));
+  const xy: Record<string, string> = {
+    'top-left': `${pad}:${pad}`,
+    'top-right': `W-w-${pad}:${pad}`,
+    'bottom-left': `${pad}:H-h-${pad}`,
+    'bottom-right': `W-w-${pad}:H-h-${pad}`,
+  };
+  const at = xy[branding.position] ?? xy['top-right']!;
+  const alpha = Math.min(1, Math.max(0, branding.opacity));
+  // The pixel format has to be forced back AFTER the overlay, not before. overlay picks a
+  // format that can represent both inputs, and with an RGBA logo that is 4:4:4 - which
+  // -profile:v main cannot encode ("main profile doesn't support 4:4:4"). Converting in
+  // the base chain does not help, because the overlay undoes it.
+  const chain = base.filter((f) => f !== 'format=yuv420p');
+  return [
+    `[0:v]${chain.join(',')}[v]`,
+    `[1:v]scale=-1:${logoH},format=rgba,colorchannelmixer=aa=${alpha}[logo]`,
+    `[v][logo]overlay=${at}:format=auto,format=yuv420p[vout]`,
+  ].join(';');
+}
+
 export async function packageRendition(
   opts: PackageRenditionOptions,
 ): Promise<PackageRenditionResult> {
-  const { rendition: r, packaging, probe: pr } = opts;
+  const { rendition: r, packaging, probe: pr, branding } = opts;
   const seg = packaging.segmentDurationSec;
   const fmp4 = packaging.container === 'fmp4';
 
@@ -67,12 +115,22 @@ export async function packageRendition(
   const args: string[] = [
     '-hide_banner', '-nostdin', '-y',
     '-i', opts.input,
-    '-map', '0:v:0',
   ];
+
+  // A logo is a second input, which means the whole chain has to move from -vf to
+  // -filter_complex: -vf only sees one input and silently ignores the other.
+  if (branding) args.push('-i', branding.logoPath);
+
+  args.push('-map', branding ? '[vout]' : '0:v:0');
   if (pr.hasAudio) args.push('-map', '0:a:0');
 
+  if (branding) {
+    args.push('-filter_complex', brandFilter(filters, branding, r.height));
+  } else {
+    args.push('-vf', filters.join(','));
+  }
+
   args.push(
-    '-vf', filters.join(','),
     '-c:v', 'libx264',
     '-profile:v', 'main',
     '-preset', 'veryfast',

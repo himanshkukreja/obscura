@@ -1,7 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { generateApiKey } from '@obscura/auth';
 import { uuidv7 } from '@obscura/shared';
-import { notFound } from '@obscura/shared';
+import { createHash } from 'node:crypto';
+import { badRequest, notFound, type BrandingPolicy } from '@obscura/shared';
+import { StorageKeys } from '@obscura/storage';
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const MAX_LOGO_BYTES = 512 * 1024;
+const VALID_POSITIONS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 import { requireClient } from '../app.ts';
 import type { Deps } from '../deps.ts';
 
@@ -40,6 +46,86 @@ export function registerOpsRoutes(app: FastifyInstance, deps: Deps): void {
     ];
     reply.header('Content-Type', 'text/plain; version=0.0.4');
     return lines.join('\n') + '\n';
+  });
+
+  /**
+   * Upload the calling tenant's brand mark, burned into every rendition of every asset
+   * ingested AFTER this call.
+   *
+   * Deliberately not retroactive. The logo is encoded into the frames, so changing it for
+   * existing assets means re-transcoding them — at roughly realtime that is a bill and a
+   * queue, not a settings change. Assets keep the mark they were made with, and
+   * `assets.branding` records which one that was.
+   *
+   * Raw PNG body rather than multipart: one file, no fields, and it avoids a multipart
+   * parser on a service that otherwise has no file uploads.
+   */
+  app.put('/api/v1/clients/me/branding/logo', {
+    bodyLimit: MAX_LOGO_BYTES,
+  }, async (req, reply) => {
+    const client = await requireClient(deps, req);
+    const body = req.body as Buffer | undefined;
+
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      throw badRequest('Send the logo as a raw PNG body');
+    }
+    // Magic bytes, not the Content-Type header: the header is whatever the caller says.
+    if (!body.subarray(0, 8).equals(PNG_MAGIC)) {
+      throw badRequest('Logo must be a PNG. Transparency is what makes an overlay usable.');
+    }
+
+    const q = req.query as { position?: string; opacity?: string; height_pct?: string };
+    const position = (q.position ?? 'top-right') as BrandingPolicy['position'];
+    if (!VALID_POSITIONS.includes(position)) {
+      throw badRequest(`position must be one of ${VALID_POSITIONS.join(', ')}`);
+    }
+    const opacity = q.opacity === undefined ? 0.7 : Number(q.opacity);
+    const heightPct = q.height_pct === undefined ? 8 : Number(q.height_pct);
+    if (!Number.isFinite(opacity) || opacity <= 0 || opacity > 1) {
+      throw badRequest('opacity must be between 0 and 1');
+    }
+    // A logo taller than a quarter of the frame is not a watermark, it is a cover.
+    if (!Number.isFinite(heightPct) || heightPct < 1 || heightPct > 25) {
+      throw badRequest('height_pct must be between 1 and 25');
+    }
+
+    const logoKey = StorageKeys.brandingLogo(client.id);
+    await deps.storage.put(deps.cfg.storage.deliveryBucket, logoKey, body, {
+      contentType: 'image/png', contentLength: body.length,
+      cacheControl: 'private, max-age=0',
+    });
+
+    const branding: BrandingPolicy = {
+      logoKey,
+      // Lets an asset attest which mark it carries, and makes a change detectable.
+      logoSha256: createHash('sha256').update(body).digest('hex'),
+      position, opacity, heightPct,
+    };
+    await deps.repos.clients.setBranding(client.id, branding);
+    await deps.repos.audit.log({
+      actorType: 'api_client', actorId: client.id, action: 'branding.logo.set',
+      targetType: 'api_client', targetId: client.id,
+      meta: { logoSha256: branding.logoSha256, position, opacity, heightPct },
+    });
+
+    return reply.status(200).send({
+      logo_sha256: branding.logoSha256, position, opacity, height_pct: heightPct,
+      applies_to: 'assets ingested after this point; existing assets keep their current mark',
+    });
+  });
+
+  app.get('/api/v1/clients/me/branding', async (req) => {
+    const client = await requireClient(deps, req);
+    const b = await deps.repos.clients.getBranding(client.id);
+    return b
+      ? { logo_sha256: b.logoSha256, position: b.position, opacity: b.opacity, height_pct: b.heightPct }
+      : { logo_sha256: null };
+  });
+
+  app.delete('/api/v1/clients/me/branding', async (req) => {
+    const client = await requireClient(deps, req);
+    await deps.repos.clients.setBranding(client.id, null);
+    return { removed: true, note: 'existing assets keep the mark they were encoded with' };
   });
 
   /**

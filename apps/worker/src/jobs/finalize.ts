@@ -113,6 +113,9 @@ export async function runFinalize(ctx: Ctx, assetId: string): Promise<void> {
       ffmpeg: process.env['FFMPEG_VERSION'] ?? 'unknown',
       ladderConfigSha256: asset.ladder_config_sha256 ?? '',
       packaging: ctx.cfg.packaging,
+      // A burned-in brand mark is part of what was produced, so the signature has to
+      // cover it. Without this the manifest attests to pixels it cannot account for.
+      ...(asset.branding ? { branding: asset.branding } : {}),
     },
     source: {
       sha256: asset.source_sha256.toString('hex'),

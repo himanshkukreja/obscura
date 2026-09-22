@@ -238,6 +238,13 @@ asserts identical segment boundary PTS across renditions.
   2956 kbps at SSIM 0.9950, CRF 23 gave 1010 kbps at SSIM 0.9879. A third of the bytes,
   for a difference no viewer can see. High-motion content still gets the bits it needs,
   because that is what CRF does.
+- **A tenant brand mark can be burned in.** This is not what
+  [ADR-0012](adr/0012-watermarking-overlay-only.md) rejected. That decision turned on
+  per-VIEWER burn-in scattering derivatives of personal data: N viewers meant N copies to
+  find and destroy. A tenant logo is identical for every viewer, so it still yields one
+  rendition set per asset and the deletion surface does not grow. In exchange it survives
+  a screen recording, which a client-side overlay cannot. Per-viewer identity stays an
+  overlay, as before.
 - **v1 always re-encodes.** Stream copy (`-c:v copy`) is tempting when the source already
   matches a rung, but it cannot guarantee the keyframe alignment above. Copy support is
   deferred until we can verify keyframe cadence from the probe and fall back safely.

@@ -1,7 +1,7 @@
 import { loadConfig, type Config } from '@obscura/shared';
 import { createDb, AssetRepository, SessionRepository, ContentKeyRepository,
   RenditionRepository, SubtitleRepository, JobRepository, DeletionRepository,
-  AuditRepository, type Db } from '@obscura/db';
+  AuditRepository, ApiClientRepository, type Db } from '@obscura/db';
 import { S3StorageProvider, type StorageProvider } from '@obscura/storage';
 import { EnvelopeKeyProvider, type KeyProvider } from '@obscura/encryption';
 import { privateKeyFromSeed, publicKeyFromSeed } from '@obscura/integrity';
@@ -26,6 +26,7 @@ export interface Ctx {
     jobs: JobRepository;
     deletions: DeletionRepository;
     audit: AuditRepository;
+    clients: ApiClientRepository;
   };
 }
 
@@ -51,6 +52,7 @@ export function createContext(overrides: Partial<Config> = {}): Ctx {
       jobs: new JobRepository(db),
       deletions: new DeletionRepository(db),
       audit: new AuditRepository(db),
+      clients: new ApiClientRepository(db),
     },
   };
 }

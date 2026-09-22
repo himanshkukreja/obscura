@@ -100,6 +100,40 @@ export interface ResolvedRendition {
   crf?: number;
 }
 
+// ── Brand watermark ─────────────────────────────────────────────────────────
+
+/**
+ * A tenant's logo, burned into every rendition at transcode.
+ *
+ * This is NOT the per-viewer watermark and must not be confused with it. That one
+ * identifies WHO IS WATCHING, varies per session, and stays a client-side overlay because
+ * ADR-0012 established that per-viewer derivatives multiply copies of personal data.
+ *
+ * A brand mark is identical for every viewer of a tenant, so burning it in still yields
+ * one rendition set per asset — the deletion surface does not grow, and the ADR's
+ * objection does not apply. In exchange it survives a screen recording and cannot be
+ * removed from devtools, which is the only thing that makes a brand mark worth having.
+ */
+export interface BrandingPolicy {
+  /** Storage key of the logo, in the delivery bucket. */
+  logoKey: string;
+  /** Hash of the logo bytes, so an asset can attest which mark it carries. */
+  logoSha256: string;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  /** 0..1. Applied to the logo's own alpha, so a transparent PNG stays transparent. */
+  opacity: number;
+  /** Logo height as a percentage of video height, so it scales across the ladder. */
+  heightPct: number;
+}
+
+/** What was actually burned into one asset. Recorded at ingest, never rewritten. */
+export interface AppliedBranding {
+  logoSha256: string;
+  position: BrandingPolicy['position'];
+  opacity: number;
+  heightPct: number;
+}
+
 // ── Packaging ───────────────────────────────────────────────────────────────
 
 export interface PackagingConfig {
@@ -137,6 +171,8 @@ export interface IntegrityManifest {
     ffmpeg: string;
     ladderConfigSha256: string;
     packaging: PackagingConfig;
+    /** Present when a tenant brand mark was burned into these renditions. */
+    branding?: AppliedBranding;
   };
   source: {
     sha256: string;
