@@ -59,7 +59,11 @@ export interface Config {
     maxConcurrentSessionsPerSubject: number | null;
     deliveryStrategy: 'proxy' | 'presigned' | 'cdn_signed';
     presignTtlSeconds: number;
-    corsOrigins: string[];
+    /**
+     * Entries are exact origins, or patterns with `*` as a single-label wildcard
+     * (`https://*.example.com`). Compiled to RegExp so @fastify/cors can match them.
+     */
+    corsOrigins: (string | RegExp)[];
   };
 
   privacy: {
@@ -279,7 +283,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
         process.env['PLAYBACK_MAX_CONCURRENT'] ? num('PLAYBACK_MAX_CONCURRENT', 0) : null,
       deliveryStrategy: env('DELIVERY_STRATEGY', 'proxy') as Config['playback']['deliveryStrategy'],
       presignTtlSeconds: num('DELIVERY_PRESIGN_TTL', 600),
-      corsOrigins: env('CORS_ORIGINS', 'http://localhost:3000').split(',').map((s) => s.trim()),
+      corsOrigins: parseCorsOrigins(env('CORS_ORIGINS', 'http://localhost:3000')),
     },
 
     privacy: {
@@ -329,6 +333,39 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   };
 
   return { ...cfg, ...overrides };
+}
+
+/**
+ * Parse CORS_ORIGINS into exact strings and wildcard patterns.
+ *
+ * An entry containing `*` becomes a RegExp, which @fastify/cors matches against the
+ * request Origin. `*` spans subdomain depth, so `https://*.example.com` admits both
+ * `https://app.example.com` and `https://dev.app.example.com` - deployments nest
+ * subdomains and a one-label wildcard silently fails to cover them.
+ *
+ * It cannot escape the domain. The pattern is anchored at both ends and every dot is
+ * escaped, so `https://example.com.attacker.test` and `https://notexample.com` are both
+ * rejected. `*` excludes `/`, so an Origin cannot smuggle a path either - though an
+ * Origin never has one.
+ *
+ * Worth being clear about what this is and is not. CORS is not an access control here -
+ * anything can request these URLs outside a browser, and the playback token is what
+ * actually authorizes. This only decides which origins a BROWSER will let read the
+ * response, so a wildcard over your own domain is a convenience, not a hole.
+ */
+export function parseCorsOrigins(raw: string): (string | RegExp)[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      if (!entry.includes('*')) return entry;
+      // Escape everything regex-significant, then turn the escaped `*` into one label.
+      const pattern = entry
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '[^/]+');
+      return new RegExp(`^${pattern}$`);
+    });
 }
 
 export function ladderConfigHash(l: LadderConfig): string {
