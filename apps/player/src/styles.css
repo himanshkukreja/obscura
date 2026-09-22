@@ -100,11 +100,20 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
   margin-bottom: 1rem; font-size: 0.87rem; line-height: 1.5; }
 
 /* ── table ────────────────────────────────────────────────── */
+/* Cells are nowrap, so the table has a minimum width that can exceed a narrow card.
+   Scroll it inside the card rather than letting rows spill past the border. */
+.table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.89rem; }
 th { text-align: left; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--muted); font-weight: 500; padding: 0 0.45rem 0.55rem; }
 td { padding: 0.6rem 0.45rem; border-top: 1px solid var(--line); vertical-align: middle; }
-td.title { font-weight: 520; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Title absorbs the slack and truncates, so the fixed-width columns keep their space
+   instead of the title pushing the actions out of the card. */
+td.title { font-weight: 520; width: 100%; max-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+/* Reserve the width of the widest badge. Without this a row visibly reflows the moment
+   an asset goes PROCESSING -> READY, which looks like a glitch rather than progress. */
+th.col-status, td.col-status { width: 8.5rem; min-width: 8.5rem; }
 td.actions { text-align: right; white-space: nowrap; }
 td.actions button + button { margin-left: 0.35rem; }
 tr.detail td { border-top: 0; padding-top: 0; }
