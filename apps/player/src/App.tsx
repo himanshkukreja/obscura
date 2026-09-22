@@ -187,9 +187,13 @@ export function App() {
         {assets.length === 0
           ? <p className="muted empty">Nothing here yet.</p>
           : (
+            <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Title</th><th>Status</th><th>Size</th><th>Duration</th><th /></tr>
+                <tr>
+                  <th>Title</th><th className="col-status">Status</th>
+                  <th>Size</th><th>Duration</th><th />
+                </tr>
               </thead>
               <tbody>
                 {assets.map((a) => (
@@ -203,6 +207,7 @@ export function App() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
       </section>
 
@@ -356,7 +361,7 @@ function Row({ asset: a, onPlay, onDelete, onInspect, expanded }: {
     <>
       <tr>
         <td className="title">{a.title ?? <code>{a.asset_id.slice(0, 8)}</code>}</td>
-        <td><Status asset={a} /></td>
+        <td className="col-status"><Status asset={a} /></td>
         <td className="muted">{a.width ? `${a.width}×${a.height}` : '—'}</td>
         <td className="muted">{a.duration_ms ? `${Math.round(a.duration_ms / 1000)}s` : '—'}</td>
         <td className="actions">
